@@ -1,0 +1,5 @@
+Cashless flow:
+
+1. vmc_setup
+   sent: READER CONFIG / setup response
+   status: observed

@@ -1,0 +1,160 @@
+==================== SCHEME2 MONTAGE MAP ====================
+
+Short purpose:
+- монтажная карта для гибридной схемы ESP32 <-> MDB
+- MDB UART переведен на 6N137
+- pulse-линии оставлены на старых PC817 без изменений
+- без общей земли между ESP32 и кофемашиной
+
+
+==================== POWER DOMAINS ====================
+
+ESP32 domain:
+- +5V_ESP
+- +3V3_ESP
+- GND_ESP32
+
+Machine isolated domain:
+- +5V_ISO
+- MACHINE_GND
+
+CRITICAL:
+- GND_ESP32 and MACHINE_GND must NEVER be connected
+- +5V_ISO нужен для U2 MDB TX
+- U3/U4 pulse-часть не требует отдельного питания +5V_ISO
+
+
+==================== PARTS ====================
+
+U1 = 6N137 = MDB RX
+U2 = 6N137 = MDB TX
+U3 = PC817 = BILL PULSE
+U4 = PC817 = COIN PULSE
+
+R1 = 470 ohm  for U1 LED input
+R2 = 220 ohm  for U2 LED input
+R3 = 220 ohm  for U3 LED input
+R4 = 220 ohm  for U4 LED input
+R5 = 4.7k     pull-up for GPIO14 to +3V3_ESP
+
+C1 = 100nF for U1 between pin8 and pin5
+C2 = 100nF for U2 between pin8 and pin5
+
+
+==================== 6N137 PINOUT ====================
+
+        ________
+ NC  1 |      | 8  VCC
+ AN  2 |      | 7  ENABLE
+ CA  3 |      | 6  OUTPUT
+ NC  4 |______| 5  GND
+
+
+==================== PC817 PINOUT ====================
+
+        ________
+ AN  1 |      | 4  COLLECTOR
+ CA  2 |      | 3  EMITTER
+       |______|
+
+
+==================== U1 MDB RX (MACHINE -> ESP32) ====================
+
+Machine side:
+- MDB pin2 TXD -> R1 470 ohm -> U1 pin2
+- MACHINE_GND -> U1 pin3
+
+ESP32 side:
+- GND_ESP32 -> U1 pin5
+- GPIO14 -> U1 pin6
+- +5V_ESP -> U1 pin7
+- +5V_ESP -> U1 pin8
+- +3V3_ESP -> R5 4.7k -> GPIO14
+- C1 100nF between U1 pin8 and U1 pin5
+
+Unused:
+- U1 pin1 NC
+- U1 pin4 NC
+
+
+==================== U2 MDB TX (ESP32 -> MACHINE) ====================
+
+ESP32 side:
+- GPIO19 -> R2 220 ohm -> U2 pin2
+- GND_ESP32 -> U2 pin3
+
+Machine side:
+- MACHINE_GND -> U2 pin5
+- MDB pin1 RXD -> U2 pin6
+- +5V_ISO -> U2 pin7
+- +5V_ISO -> U2 pin8
+- C2 100nF between U2 pin8 and U2 pin5
+
+Optional pull-up:
+- if MDB pin1 RXD has no internal pull-up:
+  +5V_ISO -> 4.7k -> MDB pin1 RXD
+
+Unused:
+- U2 pin1 NC
+- U2 pin4 NC
+
+
+==================== U3 BILL PULSE (ESP32 -> MACHINE) ====================
+
+ESP32 side:
+- GPIO32 -> R3 220 ohm -> U3 pin1
+- GND_ESP32 -> U3 pin2
+
+Machine side:
+- MACHINE_GND -> U3 pin3
+- BILL_ACCEPTOR_PULSE_IN -> U3 pin4
+
+Legacy note:
+- этот узел оставлен как в старой схеме
+- дополнительное питание на U3 не подается
+
+
+==================== U4 COIN PULSE (ESP32 -> MACHINE) ====================
+
+ESP32 side:
+- GPIO33 -> R4 220 ohm -> U4 pin1
+- GND_ESP32 -> U4 pin2
+
+Machine side:
+- MACHINE_GND -> U4 pin3
+- COIN_ACCEPTOR_PULSE_IN -> U4 pin4
+
+Legacy note:
+- этот узел оставлен как в старой схеме
+- дополнительное питание на U4 не подается
+
+
+==================== BEHAVIOR ====================
+
+Idle state:
+- MDB pin1 RXD = HIGH
+- MDB pin2 TXD = HIGH
+- BILL_ACCEPTOR_PULSE_IN = HIGH
+- COIN_ACCEPTOR_PULSE_IN = HIGH
+
+Inversion:
+- U1 inverts machine TXD before GPIO14
+- U2 works as open-collector output on machine side
+- U3/U4 remain old open-collector pulse outputs through PC817
+
+Practical meaning:
+- GPIO19 HIGH -> MDB pin1 RXD pulled LOW
+- GPIO32 HIGH -> BILL line pulled LOW
+- GPIO33 HIGH -> COIN line pulled LOW
+
+
+==================== FINAL CHECKLIST ====================
+
+[ ] No continuity between GND_ESP32 and MACHINE_GND
+[ ] U1 pin8/pin7 on +5V_ESP
+[ ] U2 pin8/pin7 on +5V_ISO
+[ ] GPIO14 has 4.7k pull-up to +3V3_ESP
+[ ] U1 and U2 each have their own 100nF capacitor
+[ ] U3/U4 stay on PC817 and are not rewired to 6N137
+[ ] MDB RXD / pulse inputs are HIGH in idle
+[ ] U1/U2 pin1 and pin4 left unconnected

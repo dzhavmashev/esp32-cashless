@@ -1,0 +1,175 @@
+==================== ESP32 ====================
+
+3.3V ---[4.7k]---+-----------------> GPIO14 / MACHINE_RX_LOGIC
+                 |
+                 +-----------------> PC817 #1 pin4
+
+GND ESP32 -------------------------> PC817 #1 pin3
+
+GPIO19 ---[1k]--------------------> BC337 base
+BC337 base ---[10k]---------------> GND ESP32
+BC337 emitter --------------------> GND ESP32
+
+GPIO32 ---[220]-------------------> PC817 #2 pin1
+GND ESP32 ------------------------> PC817 #2 pin2
+
+GPIO33 ---[220]-------------------> PC817 #3 pin1
+GND ESP32 ------------------------> PC817 #3 pin2
+
+3.3V ---||--- GND ESP32
+       100nF
+
+
+==================== COFFEE MACHINE ====================
+
+pin2 TXD ---[1k]---------------------> PC817 #1 pin1
+pin3 GND ---------------------------> PC817 #1 pin2
+
+pin1 RXD <--------------------------- BC337 collector
+pin3 GND ---------------------------> BC337 emitter/common GND
+
+bill acceptor pulse input <--------- PC817 #2 pin4
+coin acceptor pulse input <--------- PC817 #3 pin4
+pin3 GND ---------------------------> PC817 #2 pin3
+pin3 GND ---------------------------> PC817 #3 pin3
+
+pin4 +24V  not connected
+pin5 GND   not connected
+
+
+==================== RX OPTOCOUPLER ====================
+
+PC817 #1 RX
+
+Machine side:
+- pin1 <- machine pin2 TXD through 1k
+- pin2 <- machine pin3 GND
+
+ESP32 side:
+- pin3 -> GND ESP32
+- pin4 -> GPIO14 node and 4.7k pull-up to 3.3V
+
+RX level check:
+- machine pin2 TXD idle high should be about 4.7V vs machine pin3 GND
+- with machine TXD disconnected from PC817 #1 pin1, GPIO14 should be about 3.3V
+- with machine TXD connected and idle high, GPIO14 should be pulled down near 0V
+
+
+==================== TX TRANSISTOR ====================
+
+BC337 TX open-collector
+
+ESP32 side:
+- GPIO19 -> 1k -> BC337 base
+- BC337 base -> 10k -> GND ESP32
+- BC337 emitter -> GND ESP32
+
+Machine side:
+- BC337 collector -> machine pin1 RXD
+- machine pin3 GND -> common GND with ESP32
+
+Behavior:
+- GPIO19 high -> BC337 turns on -> machine RXD is pulled toward GND
+- GPIO19 low  -> BC337 off -> machine RXD is released
+- machine RXD must have idle pull-up inside the vending controller
+
+TX level check:
+- machine RXD idle should be high vs machine pin3 GND
+- during mdb_tx_hold_low_test, machine RXD should drop close to 0..0.5V
+- if machine RXD only drops to about 4.2V, TX drive is still not sufficient
+
+
+==================== PULSE OPTOCOUPLERS ====================
+
+PC817 #2 BILL PULSE
+
+ESP32 side:
+- GPIO32 -> 220 ohm -> pin1 anode
+- pin2 cathode -> GND ESP32
+
+Machine side:
+- pin4 collector -> bill acceptor pulse input
+- pin3 emitter   -> machine GND
+
+Behavior:
+- GPIO32 high -> bill pulse line is pulled toward machine GND
+- GPIO32 low  -> bill pulse line is released
+
+
+PC817 #3 COIN PULSE
+
+ESP32 side:
+- GPIO33 -> 220 ohm -> pin1 anode
+- pin2 cathode -> GND ESP32
+
+Machine side:
+- pin4 collector -> coin acceptor pulse input
+- pin3 emitter   -> machine GND
+
+Behavior:
+- GPIO33 high -> coin pulse line is pulled toward machine GND
+- GPIO33 low  -> coin pulse line is released
+
+
+Pulse line checks:
+- each pulse input on the machine side must have its own idle pull-up
+- with ESP32 idle, both machine pulse inputs should stay high
+- during bill pulse, only bill input should drop low
+- during coin pulse, only coin input should drop low
+
+
+==================== GROUNDS ====================
+
+IMPORTANT:
+- this version does NOT keep full galvanic isolation
+- GND ESP32 and machine pin3 GND must be connected together
+
+Common ground bus:
+- GND ESP32
+- BC337 emitter
+- machine pin3 GND
+
+Notes:
+- RX data still goes through PC817 #1
+- MDB TX no longer uses a dedicated optocoupler
+- do not leave ESP32 GND and machine GND separated in this version
+
+
+==================== FULL ASCII VIEW ====================
+
+   ESP32 SIDE                                         COFFEE MACHINE SIDE
+
+   3.3V ---[4.7k]---+-----> GPIO14                    pin2 TXD ---[1k]-----> PC817 #1 pin1
+                    |                                 pin3 GND -------------> PC817 #1 pin2
+                    +-----> PC817 #1 pin4
+   GND ESP32 -------> PC817 #1 pin3
+
+   GPIO19 --[1k]--> BC337 base
+                +--> [10k] --> GND ESP32
+   GND ESP32 -------> BC337 emitter -----------------> machine pin3 GND
+   BC337 collector ---------------------------------> machine pin1 RXD
+
+   GPIO32 --[220]--> PC817 #2 pin1                  PC817 #2 pin4 ---------> bill pulse input
+   GND ESP32 -------> PC817 #2 pin2                 PC817 #2 pin3 ---------> machine pin3 GND
+
+   GPIO33 --[220]--> PC817 #3 pin1                  PC817 #3 pin4 ---------> coin pulse input
+   GND ESP32 -------> PC817 #3 pin2                 PC817 #3 pin3 ---------> machine pin3 GND
+
+   3.3V ---||--- GND ESP32
+          100nF
+
+   COMMON GND REQUIRED:
+   GND ESP32 ======================================= machine pin3 GND
+
+
+==================== REMOVED FROM PREVIOUS VERSION ====================
+
+Deleted from TX path:
+- isolated MDB TX optocoupler PC817 variant
+- isolated TX ground split
+- "NO DIRECT CONNECTION" rule between ESP32 GND and machine GND
+
+Updated pulse path:
+- GPIO32 now drives bill acceptor pulse via PC817 #2
+- GPIO33 now drives coin acceptor pulse via PC817 #3
+- one payment amount can now be split in firmware between bill and coin channels
