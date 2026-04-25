@@ -61,7 +61,7 @@ struct Frame {
   uint8_t checksumReceived = 0;
   bool strictModeBitsOk = false;
   bool relaxedDecodeUsed = false;
-  bool singleByteCommand = false;
+  bool singleByteCommand = false; bool standardMdbValid = false; bool compatCandidate = false;
   uint8_t endReasonCode = 0;
   uint8_t captureQuality = 0;
   bool continuationAttempted = false;

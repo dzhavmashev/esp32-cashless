@@ -1812,7 +1812,10 @@ unsigned long MachinePhy::write(const uint8_t* data, size_t length) {
     // (mode/address bit = 0). The old behavior incorrectly marked the last
     // byte of the frame with ninthBit=1, which makes the checksum/status byte
     // look like an address/mode byte to the VMC.
-    const uint8_t ninthBit = 0U;
+    // MDB peripheral/slave data block:
+    // payload bytes have mode/ninth bit = 0,
+    // the final checksum/end byte has mode/ninth bit = 1.
+    const uint8_t ninthBit = (i + 1U == length) ? 1U : 0U;
     const unsigned long txUs = writeSlaveByte(frameId, i, data[i], ninthBit);
     if (firstTxUs == 0 && txUs != 0) {
       firstTxUs = txUs;

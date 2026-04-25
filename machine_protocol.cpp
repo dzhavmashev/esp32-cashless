@@ -251,6 +251,28 @@ void buildFrame(const RawByte* source, size_t length, Frame& out) {
   out.relaxedDecodeUsed = decoded.relaxedDecodeUsed;
   out.singleByteCommand = decoded.singleByteCommand;
 
+// A one-byte Master->Peripheral value is useful as a diagnostic candidate,
+// but it is not a complete standard MDB data block because there is no checksum byte.
+// Keep parseOk/checksumValid legacy behavior intact for the existing pipeline,
+// but expose a stricter flag for logs and high-level decisions.
+out.standardMdbValid = decoded.structurallyValid && decoded.checksumValid;
+if (decoded.direction == MdbDirection::MasterToPeripheral && decoded.singleByteCommand) {
+    out.standardMdbValid = false;
+}
+
+out.compatCandidate =
+    decoded.singleByteCommand &&
+    decoded.direction == MdbDirection::MasterToPeripheral &&
+    length == 1 &&
+    source[0].highBit;
+
+// FE is the current experimental observed coin/changer trigger.
+// It must not be promoted to "standard MDB valid" just because checksum math is trivial.
+if (length == 1 && source[0].value7 == 0xFE) {
+    out.compatCandidate = true;
+    out.standardMdbValid = false;
+}
+
   if (decoded.hasAddressCommand) {
     out.hasCandidateAddress = true;
     out.candidateAddress = decoded.address5;

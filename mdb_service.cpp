@@ -182,7 +182,7 @@ constexpr uint8_t kCoinCompatTailByteC = 0x1C;
 constexpr uint8_t kIgnoredForeignTailByteA = 0x60;
 constexpr uint8_t kIgnoredForeignTailByteB = 0x0B;
 constexpr uint8_t kCompatBurstNoiseTailByte = 0x30;
-constexpr unsigned long kCoinCompatTailIgnoreWindowUs = 2000UL;
+constexpr unsigned long kCoinCompatTailIgnoreWindowUs = 2000UL; constexpr bool kIgnoreCoinCompatTailBytes = false; // Diagnostic mode: keep FC/7C/1C visible as normal RX frames instead of hiding them as tails.
 constexpr unsigned long kGatewayWrapperLongRetryCycleUs = 50000000UL;
 constexpr unsigned long kObservedGatewaySetupCompatWindowUs = 1500000UL;
 constexpr unsigned long kSetupResponseAckTimeoutMs = 250UL;
@@ -4038,7 +4038,19 @@ void MdbService::handleFastFrameObserved(const machine::Frame& frame,
                     ",\"transaction_id\":\"" +
                     escapeForJson(coinChangerPendingTransactionId_) + "\"}");
     }
-    const unsigned long firstTxUs =
+    emitEvent("compat_single_byte_trigger_observed",
+    String("{\"experimental\":true,\"not_standard_mdb_poll\":true,\"raw_hex\":\"") +
+    machine::rawHex(frame) +
+    "\",\"normalized_hex\":\"" + machine::normalizedHex(frame) +
+    "\",\"decoded_direction\":\"" + machine::directionToString(frame.decodedDirection) +
+    "\",\"decoded_frame_kind\":\"" + machine::frameKindToString(frame.decodedKind) +
+    "\",\"standard_mdb_valid\":" + boolToJson(frame.standardMdbValid) +
+    ",\"compat_candidate\":" + boolToJson(frame.compatCandidate) +
+    ",\"candidate_address\":" + String(static_cast<unsigned int>(frame.candidateAddress)) +
+    ",\"candidate_command\":" + String(static_cast<unsigned int>(frame.candidateCommand)) +
+    ",\"rx_ts_us\":" + String(frame.endedAtUs) +
+    "}");
+        const unsigned long firstTxUs =
         sendCoinChangerPollResponse("coin_poll_observed_compat", true);
     lastCoinCompatPollObservedUs_ = frame.endedAtUs;
     lastCoinCompatPollReplyTxUs_ = firstTxUs;
@@ -7638,7 +7650,7 @@ void MdbService::processFrame(const machine::Frame& frame, unsigned long now,
 
   bool coinCompatTailIgnored = false;
   unsigned long coinCompatTailDeltaUs = 0;
-  if (shouldIgnoreCoinCompatTail(frame, &coinCompatTailDeltaUs)) {
+  if (kIgnoreCoinCompatTailBytes && shouldIgnoreCoinCompatTail(frame, &coinCompatTailDeltaUs)) {
     coinCompatTailIgnored = true;
     emitEvent("coin_compat_tail_ignored",
               String("{\"timestamp_us\":") + frame.endedAtUs +
