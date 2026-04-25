@@ -1924,6 +1924,39 @@ def collect_step_snapshot(client: SerialCommandClient) -> dict[str, Any]:
     return snapshot
 
 
+def compact_state_snapshot(client: SerialCommandClient) -> dict[str, Any]:
+    summary = client.state.summary()
+    keys = [
+        "current_dialogue_phase",
+        "last_reader_state",
+        "session_state",
+        "response_path_state",
+        "last_rx_kind",
+        "last_tx_kind",
+        "reader_enabled",
+        "setup_rx_count",
+        "setup_tx_count",
+        "poll_rx_count",
+        "enable_rx_count",
+        "tx_attempt_count",
+        "tx_success_count",
+        "tx_timeout_count",
+        "reset_seen_count",
+        "begin_session_tx_count",
+        "begin_session_ack_count",
+        "last_begin_session_status",
+    ]
+    compact = {key: summary.get(key) for key in keys}
+    compact["recent_event_kinds"] = summary.get("recent_event_kinds", [])[-6:]
+    return compact
+
+
+def capture_named_snapshot(client: SerialCommandClient, label: str) -> dict[str, Any]:
+    snapshot = compact_state_snapshot(client)
+    client._log_human("INFO", f"{label}={compact_json(snapshot)}")
+    return snapshot
+
+
 def write_report(path: Path, report: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", encoding="utf-8") as handle:
@@ -1974,6 +2007,12 @@ def run_test(args: argparse.Namespace, log_path: Path, json_path: Path) -> dict[
             client.drain(0.5)
             report["steps"].append(
                 asdict(client.end_step(step, "PASS", {"serial_open": True}))
+            )
+
+            step = client.begin_step("startup_state_snapshot")
+            startup_snapshot = capture_named_snapshot(client, "startup_state_snapshot")
+            report["steps"].append(
+                asdict(client.end_step(step, "PASS", {"snapshot": startup_snapshot}))
             )
 
             step = client.begin_step("baseline_probe")
@@ -2057,11 +2096,17 @@ def run_test(args: argparse.Namespace, log_path: Path, json_path: Path) -> dict[
             )
 
             step = client.begin_step("wait_init_phase")
+            first_setup_snapshot: dict[str, Any] | None = None
+            if client.state.saw_setup or client.state.setup_rx_count > 0:
+                first_setup_snapshot = capture_named_snapshot(client, "first_setup_state_snapshot")
 
             def init_ready(state: TestState) -> bool:
                 return state.initialization_ready()
 
             def poll_probe() -> None:
+                nonlocal first_setup_snapshot
+                if first_setup_snapshot is None and (client.state.saw_setup or client.state.setup_rx_count > 0):
+                    first_setup_snapshot = capture_named_snapshot(client, "first_setup_state_snapshot")
                 client.send_command("mdb_probe", {})
 
             client.wait_for(
@@ -2076,6 +2121,8 @@ def run_test(args: argparse.Namespace, log_path: Path, json_path: Path) -> dict[
                 "initialization_passed": True,
                 "state_summary": collect_step_snapshot(client),
                 "probe": ensure_dict_copy(final_init_probe),
+                "startup_snapshot": startup_snapshot,
+                "first_setup_snapshot": first_setup_snapshot,
             }
             report["steps"].append(asdict(client.end_step(step, "PASS", init_parsed)))
 

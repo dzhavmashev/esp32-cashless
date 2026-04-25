@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
-"""USB CLI hardware tests for MDB PHY on ESP32.
+"""USB CLI hardware tests for the current ESP32 MDB PHY.
 
 The script talks to the firmware over the serial CLI, runs a small set of
 physical-layer checks, prints raw device logs in gray for debugging, and emits
 PASS / FAIL / ERROR verdicts per test.
+
+Current hardware/firmware assumptions:
+  - this board revision keeps ``rx_invert`` disabled;
+  - debug TX telemetry is emitted as ``mdb_debug_tx_raw``;
+  - ``mdb_raw_send`` uses normal slave-data framing, so every byte has the
+    ninth bit forced to 0.
 """
 
 from __future__ import annotations
@@ -30,12 +36,33 @@ GRAY = "\033[90m"
 BOLD = "\033[1m"
 RESET = "\033[0m"
 
+PREFERRED_PORT_PREFIXES = ("/dev/ttyUSB", "/dev/ttyACM", "/dev/cu.usb")
+
 
 @dataclass
 class TestResult:
     name: str
     verdict: str
     details: str
+
+
+@dataclass
+class TxRawRecord:
+    event: str
+    tx_kind: str
+    byte_index: int
+    hex_value: str
+    ninth_bit_text: str
+    bit_period_us: int
+    character_tx_us: int
+
+
+@dataclass
+class TxTimingRecord:
+    tx_kind: str
+    byte_index: int
+    bit_period_us: int
+    character_tx_us: int
 
 
 class Esp32CliClient:
@@ -96,8 +123,24 @@ class Esp32CliClient:
         sys.stdout.flush()
 
 
-def choose_port() -> str:
-    ports = list(serial.tools.list_ports.comports())
+def sort_ports(ports: list[serial.tools.list_ports.ListPortInfo]) -> list[serial.tools.list_ports.ListPortInfo]:
+    def port_score(port: serial.tools.list_ports.ListPortInfo) -> tuple[int, str]:
+        device = port.device or ""
+        preferred_rank = len(PREFERRED_PORT_PREFIXES)
+        for index, prefix in enumerate(PREFERRED_PORT_PREFIXES):
+            if device.startswith(prefix):
+                preferred_rank = index
+                break
+        return preferred_rank, device
+
+    return sorted(ports, key=port_score)
+
+
+def choose_port(cli_port: str | None = None) -> str:
+    if cli_port:
+        return cli_port
+
+    ports = sort_ports(list(serial.tools.list_ports.comports()))
     if ports:
         print(f"{BOLD}Available serial ports:{RESET}")
         for index, port in enumerate(ports, start=1):
@@ -126,6 +169,68 @@ def first_match(pattern: str, text: str) -> re.Match[str] | None:
     return re.search(pattern, text, re.S)
 
 
+def matching_event_lines(text: str, event_names: Iterable[str]) -> list[str]:
+    wanted = set(event_names)
+    lines: list[str] = []
+    for line in text.splitlines():
+        event_match = re.search(r'"event":"([^"]+)"', line)
+        if event_match is None:
+            continue
+        if event_match.group(1) in wanted:
+            lines.append(line)
+    return lines
+
+
+def extract_tx_raw_records(text: str, tx_kind: str | None = None) -> list[TxRawRecord]:
+    pattern = re.compile(
+        r'"event":"(mdb_debug_tx_raw|phy_tx_raw|mdb_bus_tx_raw)".*?'
+        r'"tx_kind":"([^"]+)".*?"byte_index":\s*(\d+).*?'
+        r'"hex":"([0-9A-F]{2})".*?"ninth_bit":\s*(true|false|0|1).*?'
+        r'"bit_period_us":\s*(\d+).*?"character_tx_us":\s*(\d+)'
+    )
+    records: list[TxRawRecord] = []
+    for line in matching_event_lines(
+        text, ("mdb_debug_tx_raw", "phy_tx_raw", "mdb_bus_tx_raw")
+    ):
+        match = pattern.search(line)
+        if match is None:
+            continue
+        record = TxRawRecord(
+            event=match.group(1),
+            tx_kind=match.group(2),
+            byte_index=int(match.group(3)),
+            hex_value=match.group(4).upper(),
+            ninth_bit_text=match.group(5).lower(),
+            bit_period_us=int(match.group(6)),
+            character_tx_us=int(match.group(7)),
+        )
+        if tx_kind is None or record.tx_kind == tx_kind:
+            records.append(record)
+    return records
+
+
+def extract_tx_timing_records(text: str, tx_kind: str | None = None) -> list[TxTimingRecord]:
+    pattern = re.compile(
+        r'"event":"tx_bit_timing".*?"tx_kind":"([^"]+)".*?'
+        r'"byte_index":\s*(\d+).*?"bit_period_us":\s*(\d+).*?'
+        r'"character_tx_us":\s*(\d+)'
+    )
+    records: list[TxTimingRecord] = []
+    for line in matching_event_lines(text, ("tx_bit_timing",)):
+        match = pattern.search(line)
+        if match is None:
+            continue
+        record = TxTimingRecord(
+            tx_kind=match.group(1),
+            byte_index=int(match.group(2)),
+            bit_period_us=int(match.group(3)),
+            character_tx_us=int(match.group(4)),
+        )
+        if tx_kind is None or record.tx_kind == tx_kind:
+            records.append(record)
+    return records
+
+
 def extract_irq_snapshot(text: str) -> tuple[int, int, list[int]] | None:
     snapshot = first_match(
         r'"event":"irq_snapshot".*?"current_rx_level":\s*(\d+).*?'
@@ -151,22 +256,37 @@ def format_ranges(values: list[int]) -> str:
 def test_polarity(client: Esp32CliClient) -> TestResult:
     client.drain(0.5)
     text = client.command_and_collect(
-        ["mdb_monitor_stop", "mdb_rx_invert_on", "mdb_irq_snapshot"], 1.0
+        ["mdb_monitor_stop", "mdb_rx_invert_off", "mdb_irq_snapshot"], 1.0
     )
-    match = first_match(r'"event":"irq_snapshot".*?"current_rx_level":\s*(\d+)', text)
+    match = first_match(
+        r'"event":"irq_snapshot".*?"rx_invert":\s*(true|false).*?'
+        r'"current_rx_level":\s*(\d+)',
+        text,
+    )
     if match is None:
-        return TestResult("Polarity Check", "ERROR", "No irq_snapshot/current_rx_level found")
-    level = int(match.group(1))
-    if level == 0:
+        return TestResult(
+            "Polarity Check",
+            "ERROR",
+            "No irq_snapshot with rx_invert/current_rx_level found",
+        )
+    rx_invert = match.group(1) == "true"
+    level = int(match.group(2))
+    if rx_invert:
+        return TestResult(
+            "Polarity Check",
+            "FAIL",
+            "rx_invert stayed enabled; this board revision expects raw idle-high RX with invert off",
+        )
+    if level == 1:
         return TestResult(
             "Polarity Check",
             "PASS",
-            "Idle RX level is 0 on GPIO14; inverted 6N137 polarity looks correct",
+            "Idle RX level is 1 on raw GPIO14 with rx_invert off; board polarity matches current PHY config",
         )
     return TestResult(
         "Polarity Check",
         "FAIL",
-        f"Idle RX level is {level}; expected 0 when 6N137 pulls idle-low",
+        f"Idle RX level is {level}; expected raw idle-high (1) with rx_invert off on this board revision",
     )
 
 
@@ -175,13 +295,18 @@ def test_echo(client: Esp32CliClient) -> TestResult:
     text = client.command_and_collect(
         ["mdb_monitor_start", "mdb_sniff_clear", "mdb_raw_send 00 00"], 1.0
     )
-    tx_seen = first_match(r'"event":"phy_tx_raw".*?"hex":"00"', text) is not None
+    tx_records = extract_tx_raw_records(text, tx_kind="raw_send")
+    tx_seen = any(record.hex_value == "00" for record in tx_records)
     echo_seen = (
         first_match(r'"event":"phy_soft_byte".*?"byte_hex":"00"', text) is not None
         or first_match(r'"event":"phy_soft_byte".*?"byte_hex":"FF"', text) is not None
     )
     if not tx_seen:
-        return TestResult("Echo Check", "ERROR", "No phy_tx_raw for 00 00 captured")
+        return TestResult(
+            "Echo Check",
+            "ERROR",
+            "No debug TX telemetry for mdb_raw_send 00 00 was captured",
+        )
     if echo_seen:
         return TestResult(
             "Echo Check",
@@ -191,67 +316,75 @@ def test_echo(client: Esp32CliClient) -> TestResult:
     return TestResult(
         "Echo Check",
         "PASS",
-        "phy_tx_raw seen for 00 00 and no immediate phy_soft_byte echo was detected",
+        "mdb_debug_tx_raw seen for 00 00 and no immediate phy_soft_byte echo was detected",
     )
 
 
 def test_timings(client: Esp32CliClient) -> TestResult:
     client.drain(0.5)
-    text = client.command_and_collect(
-        ["mdb_sniff_clear", "mdb_raw_send 55 55", "mdb_irq_snapshot"], 1.0
-    )
-    snapshot = extract_irq_snapshot(text)
-    if snapshot is None:
-        return TestResult("Timing Check", "ERROR", "No irq_snapshot with timing data found")
-    _, interrupt_count, deltas = snapshot
-    if len(deltas) == 0:
-        delta_match = first_match(r'"event":"irq_snapshot".*?"delta_us":\s*(\d+)', text)
-        if delta_match is not None:
-            deltas = [int(delta_match.group(1))]
-    if len(deltas) == 0:
+    text = client.command_and_collect(["mdb_sniff_clear", "mdb_raw_send 55 55"], 1.0)
+    timing_records = extract_tx_timing_records(text, tx_kind="raw_send")
+    if not timing_records:
+        tx_records = extract_tx_raw_records(text, tx_kind="raw_send")
+        if tx_records:
+            timing_records = [
+                TxTimingRecord(
+                    tx_kind=record.tx_kind,
+                    byte_index=record.byte_index,
+                    bit_period_us=record.bit_period_us,
+                    character_tx_us=record.character_tx_us,
+                )
+                for record in tx_records
+            ]
+    if not timing_records:
         return TestResult(
             "Timing Check",
             "ERROR",
-            f"No edge deltas found; raw_gpio_interrupt_count={interrupt_count}",
+            "No tx_bit_timing or TX debug records found for mdb_raw_send 55 55",
         )
 
-    targets = (104, 208, 312)
-    tolerance = 15
     good = [
-        delta
-        for delta in deltas
-        if any(abs(delta - target) <= tolerance for target in targets)
+        record
+        for record in timing_records
+        if abs(record.bit_period_us - 104) <= 5
+        and abs(record.character_tx_us - 1248) <= 60
     ]
-    if len(good) * 2 >= len(deltas):
+    if len(good) == len(timing_records):
+        timing_summary = ", ".join(
+            f"byte{record.byte_index}=bit{record.bit_period_us}/char{record.character_tx_us}"
+            for record in timing_records
+        )
         return TestResult(
             "Timing Check",
             "PASS",
-            f"Edge deltas look sane for 9600 baud: {format_ranges(deltas)}",
+            f"TX timing telemetry matches 9600 baud: {timing_summary}",
         )
+    timing_summary = ", ".join(
+        f"byte{record.byte_index}=bit{record.bit_period_us}/char{record.character_tx_us}"
+        for record in timing_records
+    )
     return TestResult(
         "Timing Check",
         "FAIL",
-        f"Edge deltas are chaotic or out of range: {format_ranges(deltas)}",
+        f"TX timing telemetry is out of range for 9600 baud: {timing_summary}",
     )
 
 
 def test_ninth_bit(client: Esp32CliClient) -> TestResult:
     client.drain(0.5)
     text = client.command_and_collect(["mdb_sniff_clear", "mdb_raw_send 00 00"], 1.0)
-    matches = re.findall(
-        r'"event":"phy_tx_raw".*?"byte_index":\s*(\d+).*?"hex":"([0-9A-F]{2})".*?'
-        r'"ninth_bit":\s*(true|false|0|1)',
-        text,
-        re.S,
-    )
-    if not matches:
-        return TestResult("Ninth Bit Check", "ERROR", "No phy_tx_raw entries found")
+    records = extract_tx_raw_records(text, tx_kind="raw_send")
+    if not records:
+        return TestResult(
+            "Ninth Bit Check",
+            "ERROR",
+            "No debug TX records found for mdb_raw_send 00 00",
+        )
 
     parsed: dict[int, tuple[str, str]] = {}
-    for index_text, hex_value, ninth_text in matches:
-        index = int(index_text)
-        if index not in parsed:
-          parsed[index] = (hex_value.upper(), ninth_text.lower())
+    for record in records:
+        if record.byte_index not in parsed:
+            parsed[record.byte_index] = (record.hex_value, record.ninth_bit_text)
 
     if 0 not in parsed or 1 not in parsed:
         return TestResult(
@@ -263,12 +396,12 @@ def test_ninth_bit(client: Esp32CliClient) -> TestResult:
     first_hex, first_ninth = parsed[0]
     second_hex, second_ninth = parsed[1]
     first_ok = first_hex == "00" and first_ninth in {"false", "0"}
-    second_ok = second_hex == "00" and second_ninth in {"true", "1"}
+    second_ok = second_hex == "00" and second_ninth in {"false", "0"}
     if first_ok and second_ok:
         return TestResult(
             "Ninth Bit Check",
             "PASS",
-            "First TX byte has ninth_bit=0, second TX byte has ninth_bit=1",
+            "mdb_raw_send keeps ninth_bit=0 on both bytes, matching current slave-data framing",
         )
     return TestResult(
         "Ninth Bit Check",
@@ -288,7 +421,7 @@ def run_tests(client: Esp32CliClient) -> list[TestResult]:
 
 
 def main() -> int:
-    port = choose_port()
+    port = choose_port(sys.argv[1] if len(sys.argv) > 1 else None)
     if not port:
         print(f"{RED}No serial port selected.{RESET}")
         return 1

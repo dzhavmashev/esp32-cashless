@@ -7,6 +7,20 @@ namespace machine {
 // Максимальное число байтов в одном собранном кадре диагностики.
 constexpr size_t kMaxFrameBytes = 64;
 
+enum class MdbDirection : uint8_t {
+  Unknown = 0,
+  MasterToPeripheral = 1,
+  PeripheralToMaster = 2,
+};
+
+enum class MdbFrameKind : uint8_t {
+  Invalid = 0,
+  DataBlock = 1,
+  Ack = 2,
+  Nak = 3,
+  Ret = 4,
+};
+
 // Один байт линии с сохранением сырого значения и служебных признаков.
 struct RawByte {
   uint8_t raw = 0;
@@ -41,6 +55,13 @@ struct Frame {
   bool hasCandidateAddress = false;
   uint8_t candidateAddress = 0;
   uint8_t candidateCommand = 0;
+  MdbDirection decodedDirection = MdbDirection::Unknown;
+  MdbFrameKind decodedKind = MdbFrameKind::Invalid;
+  uint8_t checksumExpected = 0;
+  uint8_t checksumReceived = 0;
+  bool strictModeBitsOk = false;
+  bool relaxedDecodeUsed = false;
+  bool singleByteCommand = false;
   uint8_t endReasonCode = 0;
   uint8_t captureQuality = 0;
   bool continuationAttempted = false;
@@ -59,5 +80,9 @@ void buildFrame(const RawByte* source, size_t length, Frame& out);
 String rawHex(const Frame& frame);
 // Преобразует нормализованный кадр в HEX-строку.
 String normalizedHex(const Frame& frame);
+// Возвращает label направления, определенного high-level MDB decoder.
+const char* directionToString(MdbDirection direction);
+// Возвращает label типа кадра, определенного high-level MDB decoder.
+const char* frameKindToString(MdbFrameKind kind);
 
 }  // namespace machine

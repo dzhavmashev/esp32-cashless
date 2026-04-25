@@ -12,7 +12,43 @@
 
 namespace {
 constexpr bool kLogIncomingWsText = false;
+
+bool containsRawToken(const uint8_t* payload, size_t length, const char* token) {
+  if (payload == nullptr || token == nullptr) {
+    return false;
+  }
+
+  const size_t tokenLen = strlen(token);
+  if (tokenLen == 0 || length < tokenLen) {
+    return false;
+  }
+
+  for (size_t i = 0; i + tokenLen <= length; ++i) {
+    if (memcmp(payload + i, token, tokenLen) == 0) {
+      return true;
+    }
+  }
+  return false;
 }
+
+bool isIgnorableTransportNoiseRaw(const uint8_t* payload, size_t length) {
+  return containsRawToken(payload, length, "\"type\":\"connected\"") ||
+         containsRawToken(payload, length, "\"type\":\"disconnected\"") ||
+         containsRawToken(payload, length, "\"type\":\"ping\"") ||
+         containsRawToken(payload, length, "\"type\":\"pong\"") ||
+         containsRawToken(payload, length, "\"type\":\"hello\"") ||
+         containsRawToken(payload, length, "\"type\":\"welcome\"") ||
+         containsRawToken(payload, length, "\"type\":\"status\"") ||
+         containsRawToken(payload, length, "\"type\":\"keepalive\"");
+}
+
+bool isIgnorableTransportType(const String& messageType) {
+  return messageType == "connected" || messageType == "disconnected" ||
+         messageType == "ping" || messageType == "pong" ||
+         messageType == "hello" || messageType == "welcome" ||
+         messageType == "status" || messageType == "keepalive";
+}
+}  // namespace
 
 CommandService::CommandService(PulseService& pulseService, MdbService& mdbService,
                                PulseConfigService& pulseConfigService,
@@ -31,6 +67,12 @@ void CommandService::handleTextMessage(const uint8_t* payload, size_t length) {
     logSerialLine("");
   }
 
+  // Ранний отсев служебного websocket-мусора даже если он приходит
+  // фрагментами/повторами и не является полноценным JSON-командным пакетом.
+  if (isIgnorableTransportNoiseRaw(payload, length)) {
+    return;
+  }
+
   JsonDocument doc;
   const auto error = deserializeJson(doc, payload, length);
   if (error) {
@@ -42,12 +84,16 @@ void CommandService::handleTextMessage(const uint8_t* payload, size_t length) {
     return;
   }
 
-  if (doc["type"] != "command") {
+  const String messageType = String(doc["type"] | "");
+  if (messageType != "command") {
+    if (isIgnorableTransportType(messageType)) {
+      return;
+    }
     mdbService_.emitControlEvent(
         "command_rejected",
         String("{\"command\":\"\",\"reason\":\"unsupported_message_type\","
                "\"type\":\"") +
-            String(doc["type"] | "") + "\"}");
+            messageType + "\"}");
     return;
   }
 
@@ -82,7 +128,7 @@ void CommandService::handleTextMessage(const uint8_t* payload, size_t length) {
       uartService_.deactivate();
       const String transactionId =
           String(payloadNode["payload"]["transaction_id"] | "");
-      mdbService_.requestRecordPayment(amountMinor, transactionId);
+      mdbService_.requestCoinPayment(amountMinor, transactionId);
       return;
     }
 
@@ -224,6 +270,37 @@ void CommandService::handleTextMessage(const uint8_t* payload, size_t length) {
     return;
   }
 
+  if (command == "mdb_setup_response_experiment") {
+    uartService_.deactivate();
+    const bool enabled = payloadNode["payload"]["enabled"].is<bool>()
+                             ? payloadNode["payload"]["enabled"].as<bool>()
+                             : true;
+    const int currencyHi =
+        payloadNode["payload"]["currency_code_hi"].is<int>()
+            ? payloadNode["payload"]["currency_code_hi"].as<int>()
+            : 0;
+    const int currencyLo =
+        payloadNode["payload"]["currency_code_lo"].is<int>()
+            ? payloadNode["payload"]["currency_code_lo"].as<int>()
+            : 0;
+    const int responseTime =
+        payloadNode["payload"]["max_response_time"].is<int>()
+            ? payloadNode["payload"]["max_response_time"].as<int>()
+            : 1;
+    const int options =
+        payloadNode["payload"]["options"].is<int>()
+            ? payloadNode["payload"]["options"].as<int>()
+            : 0;
+    const String label = String(payloadNode["payload"]["label"] | "");
+    mdbService_.configureSetupResponseExperiment(
+        enabled, static_cast<uint8_t>(currencyHi < 0 ? 0 : currencyHi & 0xFF),
+        static_cast<uint8_t>(currencyLo < 0 ? 0 : currencyLo & 0xFF),
+        static_cast<uint8_t>(responseTime < 0 ? 0 : responseTime & 0xFF),
+        static_cast<uint8_t>(options < 0 ? 0 : options & 0xFF), label);
+    return;
+  }
+
+
   if (command == "mdb_experiment_enable") {
     uartService_.deactivate();
     mdbService_.setExperimentEnabled(true);
@@ -307,8 +384,8 @@ void CommandService::handleTextMessage(const uint8_t* payload, size_t length) {
             : true;
     mdbService_.configureExperiment(
         expectedAddress, triggerAddress, triggerCommand, replyByte, replyDelayMs,
-        cooldownMs, maxRepliesPerSession, encodedBaselineSeriesCount, observationWindowMs,
-        disableOnAnyError);
+        cooldownMs, maxRepliesPerSession, encodedBaselineSeriesCount,
+        observationWindowMs, disableOnAnyError);
     return;
   }
 

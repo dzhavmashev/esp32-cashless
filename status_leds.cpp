@@ -2,11 +2,27 @@
 
 #include "device_config.h"
 
+namespace {
+bool isConfiguredPin(int pin) { return pin >= 0; }
+
+void configureOutputIfNeeded(int pin) {
+  if (isConfiguredPin(pin)) {
+    pinMode(pin, OUTPUT);
+  }
+}
+
+void writeIfConfigured(int pin, bool enabled) {
+  if (isConfiguredPin(pin)) {
+    digitalWrite(pin, enabled ? HIGH : LOW);
+  }
+}
+}  // namespace
+
 // Инициализирует GPIO светодиодов и стартовое состояние индикации.
 void StatusLeds::begin() {
-  pinMode(GREEN_LED_PIN, OUTPUT);
-  pinMode(RED_LED_PIN, OUTPUT);
-  pinMode(YELLOW_LED_PIN, OUTPUT);
+  configureOutputIfNeeded(GREEN_LED_PIN);
+  configureOutputIfNeeded(RED_LED_PIN);
+  configureOutputIfNeeded(YELLOW_LED_PIN);
   setLeds(false, false);
   setYellowLed(true);
 }
@@ -52,13 +68,13 @@ void StatusLeds::update(bool wifiConnected, bool websocketConnected) {
 
 // Устанавливает состояние зелёного и красного светодиодов.
 void StatusLeds::setLeds(bool greenOn, bool redOn) {
-  digitalWrite(GREEN_LED_PIN, greenOn ? HIGH : LOW);
-  digitalWrite(RED_LED_PIN, redOn ? HIGH : LOW);
+  writeIfConfigured(GREEN_LED_PIN, greenOn);
+  writeIfConfigured(RED_LED_PIN, redOn);
 }
 
 // Устанавливает состояние жёлтого светодиода.
 void StatusLeds::setYellowLed(bool enabled) {
-  digitalWrite(YELLOW_LED_PIN, enabled ? HIGH : LOW);
+  writeIfConfigured(YELLOW_LED_PIN, enabled);
 }
 
 // Включает временную индикацию получения команды.

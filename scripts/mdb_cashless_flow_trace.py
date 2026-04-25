@@ -41,7 +41,7 @@ DEFAULT_PORT = "/dev/ttyUSB0"
 DEFAULT_BAUD = 115200
 DEFAULT_SERIAL_TIMEOUT_S = 0.20
 DEFAULT_OUT_DIR = Path.cwd()
-DEFAULT_CREDIT_MINOR = 1
+DEFAULT_CREDIT_MINOR = 100
 
 PROBE_TIMEOUT_S = 8.0
 PROBE_RETRY_INTERVAL_S = 0.75
@@ -53,6 +53,19 @@ APPROVE_TIMEOUT_S = 4.0
 BEGIN_SESSION_TX_TIMEOUT_S = 20.0
 BEGIN_SESSION_ACK_TIMEOUT_S = 6.0
 FINAL_DRAIN_S = 1.5
+SETUP_SWEEP_INIT_TIMEOUT_S = 14.0
+
+POPULAR_SETUP_SWEEP_CANDIDATES = [
+    {"label": "kgs_r1_o00", "currency_code_hi": 0x14, "currency_code_lo": 0x17, "max_response_time": 0x01, "options": 0x00},
+    {"label": "kgs_r0_o00", "currency_code_hi": 0x14, "currency_code_lo": 0x17, "max_response_time": 0x00, "options": 0x00},
+    {"label": "kgs_r3_o00", "currency_code_hi": 0x14, "currency_code_lo": 0x17, "max_response_time": 0x03, "options": 0x00},
+    {"label": "kgs_r1_o09", "currency_code_hi": 0x14, "currency_code_lo": 0x17, "max_response_time": 0x01, "options": 0x09},
+    {"label": "kgs_r3_o09", "currency_code_hi": 0x14, "currency_code_lo": 0x17, "max_response_time": 0x03, "options": 0x09},
+    {"label": "zero_r1_o00", "currency_code_hi": 0x00, "currency_code_lo": 0x00, "max_response_time": 0x01, "options": 0x00},
+    {"label": "zero_r0_o00", "currency_code_hi": 0x00, "currency_code_lo": 0x00, "max_response_time": 0x00, "options": 0x00},
+    {"label": "zero_r3_o09", "currency_code_hi": 0x00, "currency_code_lo": 0x00, "max_response_time": 0x03, "options": 0x09},
+    {"label": "tel0996_r3_o09", "currency_code_hi": 0x09, "currency_code_lo": 0x96, "max_response_time": 0x03, "options": 0x09},
+]
 
 RAW_LINE_BUFFER_LIMIT = 32 * 1024
 JSON_BUFFER_LIMIT = 256 * 1024
@@ -191,8 +204,13 @@ class TestState:
     begin_session_bus_tx: bool = False
     begin_session_ack_received: bool = False
     begin_session_ack_missing: bool = False
+    stray_ack_seen: bool = False
 
     last_probe: dict[str, Any] = field(default_factory=dict)
+    last_probe_uptime_ms: Optional[int] = None
+    reboot_detected: bool = False
+    reboot_from_uptime_ms: Optional[int] = None
+    reboot_to_uptime_ms: Optional[int] = None
     recent_events: deque[EventRecord] = field(default_factory=lambda: deque(maxlen=RECENT_EVENT_LIMIT))
 
     def initialization_ready(self) -> bool:
@@ -236,6 +254,19 @@ class FlowCollector:
     def __init__(self) -> None:
         self._steps_by_code: dict[str, FlowStep] = {}
         self._exchanges_by_code: dict[str, FlowExchange] = {}
+        self._begin_session_observed = False
+
+    def _mark_begin_session_observed(self) -> None:
+        self._begin_session_observed = True
+
+    def _can_attribute_ack_to_begin_session(self, details: dict[str, Any]) -> bool:
+        if self._begin_session_observed:
+            return True
+        tx_ts = details.get("begin_session_tx_ts_us")
+        try:
+            return int(tx_ts) > 0
+        except (TypeError, ValueError):
+            return False
 
     def add_step(self, code: str, side: str, summary: str, details: dict[str, Any]) -> None:
         if code in self._steps_by_code:
@@ -294,13 +325,14 @@ class FlowCollector:
                 self.add_step("vmc_poll", "VMC -> SLAVE", "POLL", item)
                 self.add_exchange("vmc_poll", received_from_vmc="POLL", evidence=item)
             elif kind == "ACK":
-                self.add_step("vmc_begin_session_ack", "VMC -> SLAVE", "ACK", item)
-                self.add_exchange(
-                    "vmc_begin_session_ack",
-                    received_from_vmc="ACK after BEGIN SESSION",
-                    status="accepted",
-                    evidence=item,
-                )
+                if self._can_attribute_ack_to_begin_session(item):
+                    self.add_step("vmc_begin_session_ack", "VMC -> SLAVE", "ACK", item)
+                    self.add_exchange(
+                        "vmc_begin_session_ack",
+                        received_from_vmc="ACK after BEGIN SESSION",
+                        status="accepted",
+                        evidence=item,
+                    )
         elif direction == "TX_TO_MACHINE":
             if kind in {"JUST_RESET", "JUST RESET"}:
                 self.add_step("slave_just_reset", "SLAVE -> VMC", "JUST RESET", item)
@@ -313,6 +345,7 @@ class FlowCollector:
                     evidence=item,
                 )
             elif kind in {"BEGIN_SESSION", "BEGIN SESSION"}:
+                self._mark_begin_session_observed()
                 self.add_step("slave_begin_session", "SLAVE -> VMC", "BEGIN SESSION", item)
                 self.add_exchange(
                     "slave_begin_session",
@@ -343,6 +376,7 @@ class FlowCollector:
                 evidence=details,
             )
         elif event_name in {"cashless_begin_session_sent", "cashless_begin_session_tx_state"}:
+            self._mark_begin_session_observed()
             self.add_step("slave_begin_session", "SLAVE -> VMC", "BEGIN SESSION", details)
             self.add_exchange(
                 "slave_begin_session",
@@ -352,6 +386,7 @@ class FlowCollector:
         elif event_name == "mdb_bus_tx_raw":
             tx_kind = str(details.get("tx_kind", ""))
             if tx_kind == "begin_session":
+                self._mark_begin_session_observed()
                 self.add_step("slave_begin_session", "SLAVE -> VMC", "BEGIN SESSION", details)
                 self.add_exchange(
                     "slave_begin_session",
@@ -359,21 +394,23 @@ class FlowCollector:
                     evidence=details,
                 )
         elif event_name == "cashless_begin_session_ack_received":
-            self.add_step("vmc_begin_session_ack", "VMC -> SLAVE", "ACK", details)
-            self.add_exchange(
-                "vmc_begin_session_ack",
-                received_from_vmc="ACK after BEGIN SESSION",
-                status="accepted",
-                evidence=details,
-            )
+            if self._can_attribute_ack_to_begin_session(details):
+                self.add_step("vmc_begin_session_ack", "VMC -> SLAVE", "ACK", details)
+                self.add_exchange(
+                    "vmc_begin_session_ack",
+                    received_from_vmc="ACK after BEGIN SESSION",
+                    status="accepted",
+                    evidence=details,
+                )
         elif event_name == "cashless_begin_session_ack_missing":
-            self.add_step("vmc_begin_session_ack_missing", "VMC -> SLAVE", "ACK missing / timeout", details)
-            self.add_exchange(
-                "vmc_begin_session_ack_missing",
-                received_from_vmc="No ACK after BEGIN SESSION",
-                status="timeout",
-                evidence=details,
-            )
+            if self._begin_session_observed:
+                self.add_step("vmc_begin_session_ack_missing", "VMC -> SLAVE", "ACK missing / timeout", details)
+                self.add_exchange(
+                    "vmc_begin_session_ack_missing",
+                    received_from_vmc="No ACK after BEGIN SESSION",
+                    status="timeout",
+                    evidence=details,
+                )
         elif event_name == "cashless_setup_response":
             self.add_step("slave_reader_config", "SLAVE -> VMC", "READER CONFIG", details)
             self.add_exchange(
@@ -604,6 +641,26 @@ class SerialFlowClient:
         if event_name == "probe":
             self.state.explicit_probe_seen = True
             self.state.last_probe = details
+            uptime_ms_value = details.get("uptime_ms")
+            try:
+                uptime_ms = int(uptime_ms_value)
+            except (TypeError, ValueError):
+                uptime_ms = None
+            if uptime_ms is not None:
+                last_uptime = self.state.last_probe_uptime_ms
+                if last_uptime is not None and uptime_ms + 5000 < last_uptime:
+                    self.state.reboot_detected = True
+                    self.state.reboot_from_uptime_ms = last_uptime
+                    self.state.reboot_to_uptime_ms = uptime_ms
+                    self._log(
+                        "WARN",
+                        "reboot_detected_by_uptime_drop="
+                        + compact_json({
+                            "from_uptime_ms": last_uptime,
+                            "to_uptime_ms": uptime_ms,
+                        }),
+                    )
+                self.state.last_probe_uptime_ms = uptime_ms
             for item in details.get("dialogue_history", []):
                 if isinstance(item, dict):
                     self._ingest_dialogue_item(item)
@@ -611,8 +668,13 @@ class SerialFlowClient:
             self.state.saw_setup_response |= int(details.get("setup_tx_count", 0)) > 0
             self.state.saw_enable |= int(details.get("enable_applied_count", 0)) > 0 or bool(details.get("reader_enabled"))
             self.state.saw_poll |= int(details.get("poll_rx_count", 0)) > 0
-            self.state.begin_session_sent |= int(details.get("begin_session_tx_count", 0)) > 0
-            self.state.begin_session_ack_received |= int(details.get("begin_session_ack_count", 0)) > 0
+            probe_begin_tx = int(details.get("begin_session_tx_count", 0)) > 0
+            probe_begin_ack = int(details.get("begin_session_ack_count", 0)) > 0
+            self.state.begin_session_sent |= probe_begin_tx
+            if probe_begin_ack and (probe_begin_tx or self.state.begin_session_sent or self.state.begin_session_bus_tx):
+                self.state.begin_session_ack_received = True
+            elif probe_begin_ack:
+                self.state.stray_ack_seen = True
             return
 
         if event_name == "dialogue_trace":
@@ -657,10 +719,19 @@ class SerialFlowClient:
                 self.state.begin_session_sent = True
             return
         if event_name == "cashless_begin_session_ack_received":
-            self.state.begin_session_ack_received = True
+            tx_ts = details.get("begin_session_tx_ts_us")
+            tx_seen = self.state.begin_session_sent or self.state.begin_session_bus_tx
+            if tx_seen:
+                self.state.begin_session_ack_received = True
+            else:
+                try:
+                    self.state.begin_session_ack_received = int(tx_ts) > 0
+                except (TypeError, ValueError):
+                    self.state.stray_ack_seen = True
             return
         if event_name == "cashless_begin_session_ack_missing":
-            self.state.begin_session_ack_missing = True
+            if self.state.begin_session_sent or self.state.begin_session_bus_tx:
+                self.state.begin_session_ack_missing = True
             return
 
     def _ingest_dialogue_item(self, item: dict[str, Any]) -> None:
@@ -708,22 +779,35 @@ class SerialFlowClient:
                 next_poll = now + poll_interval_s
         raise StepFailure(f"timeout_waiting_for_{description}")
 
-    def wait_for_event(self, names: set[str], timeout_s: float) -> EventRecord:
-        deadline = time.monotonic() + timeout_s
+    def wait_for_event(
+        self,
+        names: str | set[str],
+        predicate: Optional[Callable[[dict[str, Any]], bool]] = None,
+        timeout_s: float = 3.0,
+    ) -> EventRecord:
+        wanted_names = {names} if isinstance(names, str) else set(names)
         baseline_seq = self.state.event_seq
+        deadline = time.monotonic() + timeout_s
         while True:
             self._raise_reader_exception_if_needed()
             with self._condition:
                 for evt in reversed(self.events):
                     if evt.seq <= baseline_seq:
                         break
-                    if evt.event in names:
+                    if evt.event not in wanted_names:
+                        continue
+                    if predicate is None or predicate(evt.details):
                         return evt
                 now = time.monotonic()
                 if now >= deadline:
                     break
-                self._condition.wait(timeout=deadline - now)
-        raise StepFailure(f"timeout_waiting_for_events_{'_'.join(sorted(names))}")
+                self._condition.wait(timeout=max(0.0, min(0.10, deadline - now)))
+        if len(wanted_names) == 1:
+            raise StepFailure(f"timeout_waiting_for_event_{next(iter(wanted_names))}")
+        raise StepFailure(f"timeout_waiting_for_events_{'_'.join(sorted(wanted_names))}")
+
+    def wait_for_any_event(self, names: set[str], timeout_s: float) -> EventRecord:
+        return self.wait_for_event(names, timeout_s=timeout_s)
 
     def request_probe(self) -> dict[str, Any]:
         attempts = 0
@@ -745,6 +829,199 @@ class SerialFlowClient:
         raise StepFailure("timeout_waiting_for_probe")
 
 
+def candidate_currency_hex(candidate: dict[str, Any]) -> str:
+    return f"{int(candidate['currency_code_hi']) & 0xFF:02X} {int(candidate['currency_code_lo']) & 0xFF:02X}"
+
+
+def probe_matches_clean_reset_state(probe: dict[str, Any]) -> bool:
+    if not isinstance(probe, dict):
+        return False
+    reader_state = str(probe.get("last_reader_state") or probe.get("reader_state") or "")
+    expected_next_rx_kind = str(probe.get("expected_next_rx_kind") or "")
+    expected_next_tx_kind = str(probe.get("expected_next_tx_kind") or "")
+    blocker = str(probe.get("protocol_progress_blocker") or "")
+    return (
+        reader_state == "UNINITIALIZED"
+        and expected_next_rx_kind == "POLL"
+        and expected_next_tx_kind == "just_reset_status"
+        and blocker.startswith("waiting_for_poll_after_reset")
+    )
+
+
+def request_probe_checked(client: SerialFlowClient, timeout_s: float = PROBE_TIMEOUT_S) -> dict[str, Any]:
+    probe = client.request_probe()
+    if not isinstance(probe, dict):
+        raise StepFailure("probe_not_dict")
+    return probe
+
+
+def ensure_clean_reset_state(client: SerialFlowClient, timeout_s: float = 6.0) -> dict[str, Any]:
+    client.clear_transport_backlog()
+    client.send_command("mdb_rx_invert_off", {})
+    client.drain(0.10)
+    client.send_command("mdb_passive_sniff_off", {})
+    client.drain(0.10)
+    client.send_command("mdb_clear_session", {})
+    client.drain(0.35)
+    deadline = time.monotonic() + timeout_s
+    last_probe: dict[str, Any] | None = None
+    last_error: Exception | None = None
+    while time.monotonic() < deadline:
+        try:
+            probe = request_probe_checked(client)
+            last_probe = probe
+            if probe_matches_clean_reset_state(probe):
+                return probe
+        except Exception as exc:
+            last_error = exc
+        client.drain(0.25)
+    if last_probe is not None:
+        raise StepFailure(f"candidate_reset_did_not_reach_clean_state:{compact_json(last_probe)}")
+    if last_error is not None:
+        raise StepFailure(f"candidate_reset_did_not_reach_clean_state:{last_error}")
+    raise StepFailure("candidate_reset_did_not_reach_clean_state:no_probe")
+
+
+def probe_matches_setup_response_experiment(probe: dict[str, Any], candidate: dict[str, Any]) -> bool:
+    if not isinstance(probe, dict):
+        return False
+    if not bool(probe.get("setup_response_experiment_enabled")):
+        return False
+    if str(probe.get("setup_response_experiment_label") or "") != str(candidate["label"]):
+        return False
+    if str(probe.get("setup_response_experiment_currency_code_bytes_hex") or "").upper() != candidate_currency_hex(candidate):
+        return False
+    try:
+        if int(probe.get("setup_response_experiment_max_response_time")) != int(candidate["max_response_time"]):
+            return False
+        if int(probe.get("setup_response_experiment_options")) != int(candidate["options"]):
+            return False
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def configure_setup_response_experiment_verified(client: SerialFlowClient, candidate: dict[str, Any], retries: int = 3) -> dict[str, Any]:
+    last_probe: dict[str, Any] | None = None
+
+    # If the requested candidate is already active, do not churn the transport.
+    try:
+        probe = request_probe_checked(client, timeout_s=3.0)
+        last_probe = probe
+        if probe_matches_setup_response_experiment(probe, candidate):
+            return probe
+    except Exception:
+        pass
+
+    for _ in range(retries):
+        client.clear_transport_backlog()
+        client.send_command(
+            "mdb_setup_response_experiment",
+            {
+                "enabled": True,
+                "label": str(candidate["label"]),
+                "currency_code_hi": int(candidate["currency_code_hi"]),
+                "currency_code_lo": int(candidate["currency_code_lo"]),
+                "max_response_time": int(candidate["max_response_time"]),
+                "options": int(candidate["options"]),
+            },
+        )
+        client.drain(0.50)
+        deadline = time.monotonic() + 3.5
+        while time.monotonic() < deadline:
+            try:
+                probe = request_probe_checked(client, timeout_s=3.0)
+                last_probe = probe
+                if probe_matches_setup_response_experiment(probe, candidate):
+                    return probe
+            except Exception:
+                pass
+            client.drain(0.20)
+
+    raise StepFailure("setup_response_experiment_not_visible_in_probe:" + compact_json(last_probe or {}))
+
+
+def reset_candidate_state(client: SerialFlowClient, timeout_s: float = 6.0) -> dict[str, Any]:
+    return ensure_clean_reset_state(client, timeout_s=timeout_s)
+
+
+def apply_setup_response_experiment_candidate(client: SerialFlowClient, candidate: dict[str, Any], retries: int = 3) -> dict[str, Any]:
+    return configure_setup_response_experiment_verified(client, candidate, retries=retries)
+
+
+def run_setup_sweep(args: argparse.Namespace) -> tuple[dict[str, Any] | None, list[dict[str, Any]]]:
+    results: list[dict[str, Any]] = []
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    for index, candidate in enumerate(POPULAR_SETUP_SWEEP_CANDIDATES, start=1):
+        log_path = args.out_dir / f"mdb_setup_sweep_{timestamp}_{index:02d}_{candidate['label']}.log"
+        outcome: dict[str, Any] = {
+            "candidate": candidate,
+            "pass": False,
+            "log_path": str(log_path),
+        }
+        with SerialFlowClient(
+            port=args.port,
+            baud=args.baud,
+            serial_timeout=args.timeout,
+            log_path=log_path,
+            verbose=args.verbose,
+        ) as client:
+            try:
+                pre_reset_probe = ensure_clean_reset_state(client)
+                applied_probe = configure_setup_response_experiment_verified(client, candidate)
+                post_apply_clean_probe = ensure_clean_reset_state(client)
+
+                def poll_init_state() -> None:
+                    client.send_command("mdb_probe", {})
+
+                client.wait_for(
+                    lambda state: state.initialization_ready(),
+                    args.setup_sweep_timeout,
+                    "initialization_phase",
+                    on_poll=poll_init_state,
+                    poll_interval_s=INIT_PROBE_INTERVAL_S,
+                )
+                final_probe = request_probe_checked(client)
+                outcome.update({
+                    "pass": True,
+                    "pre_reset_probe": pre_reset_probe,
+                    "applied_probe": applied_probe,
+                    "post_apply_clean_probe": post_apply_clean_probe,
+                    "final_probe": final_probe,
+                    "experiment_verified": True,
+                    "reboot_detected": client.state.reboot_detected,
+                })
+            except Exception as exc:
+                failure_probe = None
+                try:
+                    failure_probe = request_probe_checked(client)
+                except Exception:
+                    failure_probe = None
+                blocker_probe = failure_probe if isinstance(failure_probe, dict) else (
+                    client.state.last_probe if isinstance(client.state.last_probe, dict) else {}
+                )
+                outcome.update({
+                    "pass": False,
+                    "failure_reason": str(exc),
+                    "classified_failure_reason": classify_init_phase_blocker(
+                        blocker_probe, client.state.reboot_detected
+                    ),
+                    "blocker_snapshot": summarize_probe_blocker(blocker_probe),
+                    "failure_probe": failure_probe,
+                    "reboot_detected": client.state.reboot_detected,
+                    "reboot_from_uptime_ms": client.state.reboot_from_uptime_ms,
+                    "reboot_to_uptime_ms": client.state.reboot_to_uptime_ms,
+                    "experiment_verified": bool(
+                        isinstance(client.state.last_probe, dict)
+                        and probe_matches_setup_response_experiment(client.state.last_probe, candidate)
+                    ),
+                })
+        results.append(outcome)
+        if outcome.get("pass"):
+            return candidate, results
+    return None, results
+
+
 def build_paths(out_dir: Path) -> tuple[Path, Path, Path]:
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     base = out_dir / f"mdb_cashless_flow_{timestamp}"
@@ -763,7 +1040,97 @@ def write_text(path: Path, content: str) -> None:
     path.write_text(content, encoding="utf-8")
 
 
-def run_trace(args: argparse.Namespace, log_path: Path, json_path: Path, txt_path: Path) -> dict[str, Any]:
+def minor_to_display(amount_minor: int, scale_factor: int = 100, decimal_places: int = 2) -> str:
+    return f"{amount_minor / float(scale_factor):.{decimal_places}f}"
+
+
+def summarize_probe_blocker(probe: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(probe, dict):
+        return {
+            "reader_state": None,
+            "last_rx_kind": None,
+            "last_tx_kind": None,
+            "expected_next_rx_kind": None,
+            "expected_next_tx_kind": None,
+            "protocol_progress_blocker": None,
+            "wrapper_phase": None,
+            "wrapper_fsm_state": None,
+            "wrapper_transition_reason": None,
+        }
+
+    return {
+        "reader_state": probe.get("last_reader_state") or probe.get("reader_state"),
+        "last_rx_kind": probe.get("last_rx_kind"),
+        "last_tx_kind": probe.get("last_tx_kind"),
+        "expected_next_rx_kind": probe.get("expected_next_rx_kind"),
+        "expected_next_tx_kind": probe.get("expected_next_tx_kind"),
+        "protocol_progress_blocker": probe.get("protocol_progress_blocker"),
+        "wrapper_phase": probe.get("wrapper_phase"),
+        "wrapper_fsm_state": probe.get("wrapper_fsm_state"),
+        "wrapper_transition_reason": probe.get("wrapper_transition_reason"),
+    }
+
+
+def classify_init_phase_blocker(probe: dict[str, Any], reboot_detected: bool = False) -> str:
+    if reboot_detected:
+        return "reboot_detected_during_init"
+
+    blocker = str(probe.get("protocol_progress_blocker") or "")
+    expected_rx = str(probe.get("expected_next_rx_kind") or "")
+    reader_state = str(probe.get("last_reader_state") or probe.get("reader_state") or "")
+    setup_rx_count = int(probe.get("setup_rx_count") or 0)
+    setup_tx_count = int(probe.get("setup_tx_count") or 0)
+    last_rx_kind = str(probe.get("last_rx_kind") or "")
+
+    if blocker == "waiting_for_poll_after_reset" or (
+        expected_rx == "POLL" and reader_state == "UNINITIALIZED"
+    ):
+        return "still_waiting_for_poll_after_reset"
+
+    if setup_rx_count > 0 and setup_tx_count > 0 and last_rx_kind == "SETUP":
+        return "setup_seen_but_no_followup"
+
+    if setup_rx_count > 0 and setup_tx_count > 0:
+        return "setup_response_sent_but_init_not_completed"
+
+    return "initialization_phase_unknown"
+
+
+def compact_flow_state_snapshot(client: SerialFlowClient) -> dict[str, Any]:
+    probe = client.state.last_probe if isinstance(client.state.last_probe, dict) else {}
+    return {
+        "saw_setup": client.state.saw_setup,
+        "saw_setup_response": client.state.saw_setup_response,
+        "saw_enable": client.state.saw_enable,
+        "saw_poll": client.state.saw_poll,
+        "reader_enabled": client.state.reader_enabled,
+        "begin_session_armed": client.state.begin_session_armed,
+        "begin_session_sent": client.state.begin_session_sent,
+        "begin_session_ack_received": client.state.begin_session_ack_received,
+        "last_probe_reader_state": probe.get("last_reader_state"),
+        "last_probe_rx_kind": probe.get("last_rx_kind"),
+        "last_probe_tx_kind": probe.get("last_tx_kind"),
+        "last_probe_setup_rx_count": probe.get("setup_rx_count"),
+        "last_probe_setup_tx_count": probe.get("setup_tx_count"),
+        "last_probe_poll_rx_count": probe.get("poll_rx_count"),
+        "last_probe_enable_rx_count": probe.get("enable_rx_count"),
+        "last_probe_protocol_progress_blocker": probe.get("protocol_progress_blocker"),
+        "last_probe_wrapper_phase": probe.get("wrapper_phase"),
+        "last_probe_wrapper_fsm_state": probe.get("wrapper_fsm_state"),
+        "last_probe_wrapper_transition_reason": probe.get("wrapper_transition_reason"),
+        "reboot_detected": client.state.reboot_detected,
+        "reboot_from_uptime_ms": client.state.reboot_from_uptime_ms,
+        "reboot_to_uptime_ms": client.state.reboot_to_uptime_ms,
+    }
+
+
+def capture_flow_snapshot(client: SerialFlowClient, label: str) -> dict[str, Any]:
+    snapshot = compact_flow_state_snapshot(client)
+    client._log("INFO", f"{label}={compact_json(snapshot)}")
+    return snapshot
+
+
+def run_trace(args: argparse.Namespace, log_path: Path, json_path: Path, txt_path: Path, selected_candidate: dict[str, Any] | None = None, sweep_results: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     report: dict[str, Any] = {
         "meta": {
             "test_name": "mdb_cashless_flow_trace",
@@ -772,6 +1139,9 @@ def run_trace(args: argparse.Namespace, log_path: Path, json_path: Path, txt_pat
             "baud": args.baud,
             "serial_timeout_s": args.timeout,
             "credit_minor": args.credit,
+            "credit_display": minor_to_display(args.credit),
+            "scale_factor": 100,
+            "decimal_places": 2,
             "log_path": str(log_path),
             "json_path": str(json_path),
             "txt_path": str(txt_path),
@@ -783,8 +1153,10 @@ def run_trace(args: argparse.Namespace, log_path: Path, json_path: Path, txt_pat
                 "mdb_probe",
                 "pay transport=mdb",
                 "mdb_approve",
-            ],
+            ] + (["mdb_setup_response_experiment"] if selected_candidate else []),
+            "setup_sweep_selected": selected_candidate,
         },
+        "setup_sweep": sweep_results or [],
         "steps": [],
         "cashless_flow": {"steps": [], "exchanges": [], "text": ""},
         "result": {},
@@ -801,6 +1173,30 @@ def run_trace(args: argparse.Namespace, log_path: Path, json_path: Path, txt_pat
             step = client.begin_step("serial_access")
             client.drain(0.5)
             report["steps"].append(asdict(client.end_step(step, "PASS", {"serial_open": True})))
+
+            step = client.begin_step("startup_state_snapshot")
+            startup_snapshot = capture_flow_snapshot(client, "startup_state_snapshot")
+            report["steps"].append(asdict(client.end_step(step, "PASS", {"snapshot": startup_snapshot})))
+
+            if selected_candidate is not None:
+                step = client.begin_step("setup_response_experiment")
+                pre_apply_clean_probe = ensure_clean_reset_state(client)
+                verification_probe = configure_setup_response_experiment_verified(client, selected_candidate)
+                post_apply_clean_probe = ensure_clean_reset_state(client)
+                report["steps"].append(
+                    asdict(
+                        client.end_step(
+                            step,
+                            "PASS",
+                            {
+                                "candidate": selected_candidate,
+                                "pre_apply_clean_probe": pre_apply_clean_probe,
+                                "verification_probe": verification_probe,
+                                "post_apply_clean_probe": post_apply_clean_probe,
+                            },
+                        )
+                    )
+                )
 
             step = client.begin_step("baseline_probe")
             client.send_command("mdb_rx_invert_off", {})
@@ -837,14 +1233,7 @@ def run_trace(args: argparse.Namespace, log_path: Path, json_path: Path, txt_pat
             )
 
             step = client.begin_step("wait_init_phase")
-            client.wait_for(
-                lambda state: state.initialization_ready(),
-                INIT_TIMEOUT_S,
-                "initialization_phase",
-                on_poll=lambda: client.send_command("mdb_probe", {}),
-                poll_interval_s=INIT_PROBE_INTERVAL_S,
-            )
-            init_probe = client.request_probe()
+            init_probe, first_setup_snapshot = wait_for_initialization_phase(client, INIT_TIMEOUT_S)
             report["steps"].append(
                 asdict(
                     client.end_step(
@@ -853,6 +1242,9 @@ def run_trace(args: argparse.Namespace, log_path: Path, json_path: Path, txt_pat
                         {
                             "initialization_passed": True,
                             "probe": init_probe,
+                            "startup_snapshot": startup_snapshot,
+                            "first_setup_snapshot": first_setup_snapshot,
+                            "selected_setup_candidate": selected_candidate,
                         },
                     )
                 )
@@ -962,17 +1354,48 @@ def run_trace(args: argparse.Namespace, log_path: Path, json_path: Path, txt_pat
                 "protocol_alive": client.state.protocol_alive(),
                 "failure_step": None,
                 "failure_reason": None,
+                "credit_minor": args.credit,
+                "credit_display": minor_to_display(args.credit),
+                "scale_factor": 100,
+                "decimal_places": 2,
             }
         except Exception as exc:
-            if client.current_step is not None:
-                report["steps"].append(
-                    asdict(client.end_step(client.current_step, "FAIL", {}))
-                )
             failure_probe: dict[str, Any] | None = None
             try:
                 failure_probe = client.request_probe()
             except Exception:
                 failure_probe = None
+
+            blocker_probe = failure_probe if isinstance(failure_probe, dict) else (
+                client.state.last_probe if isinstance(client.state.last_probe, dict) else {}
+            )
+            blocker_snapshot = summarize_probe_blocker(blocker_probe)
+            blocker_code = classify_init_phase_blocker(blocker_probe, client.state.reboot_detected)
+
+            step_extra: dict[str, Any] = {
+                "credit_minor": args.credit,
+                "credit_display": minor_to_display(args.credit),
+            }
+            if blocker_probe:
+                step_extra.update(
+                    {
+                        "failure_reason": blocker_code,
+                        "blocker_snapshot": blocker_snapshot,
+                        "setup_rx_count": blocker_probe.get("setup_rx_count"),
+                        "setup_tx_count": blocker_probe.get("setup_tx_count"),
+                        "poll_rx_count": blocker_probe.get("poll_rx_count"),
+                        "enable_rx_count": blocker_probe.get("enable_rx_count"),
+                        "reboot_detected": client.state.reboot_detected,
+                        "reboot_from_uptime_ms": client.state.reboot_from_uptime_ms,
+                        "reboot_to_uptime_ms": client.state.reboot_to_uptime_ms,
+                    }
+                )
+
+            if client.current_step is not None:
+                report["steps"].append(
+                    asdict(client.end_step(client.current_step, "FAIL", step_extra))
+                )
+
             report["result"] = {
                 "pass": False,
                 "initialization_passed": client.state.initialization_ready(),
@@ -981,14 +1404,27 @@ def run_trace(args: argparse.Namespace, log_path: Path, json_path: Path, txt_pat
                 "protocol_alive": client.state.protocol_alive(),
                 "failure_step": report["steps"][-1]["name"] if report["steps"] else "unknown",
                 "failure_reason": str(exc),
+                "classified_failure_reason": blocker_code,
+                "blocker_snapshot": blocker_snapshot,
                 "exception_traceback": traceback.format_exc(),
                 "failure_probe": failure_probe,
+                "reboot_detected": client.state.reboot_detected,
+                "reboot_from_uptime_ms": client.state.reboot_from_uptime_ms,
+                "reboot_to_uptime_ms": client.state.reboot_to_uptime_ms,
+                "credit_minor": args.credit,
+                "credit_display": minor_to_display(args.credit),
+                "scale_factor": 100,
+                "decimal_places": 2,
             }
 
+        flow_text = (
+            f"Credit requested: {args.credit} minor units ({minor_to_display(args.credit)})\n\n"
+            + client.flow.text_summary()
+        )
         report["cashless_flow"] = {
             "steps": client.flow.steps(),
             "exchanges": client.flow.exchanges(),
-            "text": client.flow.text_summary(),
+            "text": flow_text,
         }
         report["meta"]["ended_at"] = now_iso()
 
@@ -1026,6 +1462,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print serial RX/TX lines to stdout",
     )
+    parser.add_argument(
+        "--setup-sweep",
+        action="store_true",
+        help="Try a small set of popular READER CONFIG combinations before the full trace",
+    )
+    parser.add_argument(
+        "--setup-sweep-timeout",
+        type=float,
+        default=SETUP_SWEEP_INIT_TIMEOUT_S,
+        help="Per-candidate initialization timeout for the setup sweep",
+    )
     return parser
 
 
@@ -1033,7 +1480,49 @@ def main() -> int:
     args = build_arg_parser().parse_args()
     log_path, json_path, txt_path = build_paths(args.out_dir)
     try:
-        report = run_trace(args, log_path, json_path, txt_path)
+        selected_candidate = None
+        sweep_results: list[dict[str, Any]] | None = None
+        if args.setup_sweep:
+            selected_candidate, sweep_results = run_setup_sweep(args)
+            if selected_candidate is None:
+                fallback = {
+                    "meta": {
+                        "test_name": "mdb_cashless_flow_trace",
+                        "started_at": now_iso(),
+                        "ended_at": now_iso(),
+                        "port": args.port,
+                        "baud": args.baud,
+                        "serial_timeout_s": args.timeout,
+                        "credit_minor": args.credit,
+                        "credit_display": minor_to_display(args.credit),
+                        "scale_factor": 100,
+                        "decimal_places": 2,
+                        "log_path": str(log_path),
+                        "json_path": str(json_path),
+                        "txt_path": str(txt_path),
+                    },
+                    "steps": [],
+                    "setup_sweep": sweep_results or [],
+                    "cashless_flow": {
+                        "steps": [],
+                        "exchanges": [],
+                        "text": f"Credit requested: {args.credit} minor units ({minor_to_display(args.credit)})\n\nNo working setup candidate found.\n",
+                    },
+                    "result": {
+                        "pass": False,
+                        "failure_step": "setup_sweep",
+                        "failure_reason": "no_working_setup_candidate",
+                        "credit_minor": args.credit,
+                        "credit_display": minor_to_display(args.credit),
+                        "scale_factor": 100,
+                        "decimal_places": 2,
+                    },
+                }
+                write_json(json_path, fallback)
+                write_text(txt_path, fallback["cashless_flow"]["text"])
+                print(compact_json({"pass": False, "json_path": str(json_path), "txt_path": str(txt_path), "log_path": str(log_path)}))
+                return 1
+        report = run_trace(args, log_path, json_path, txt_path, selected_candidate, sweep_results)
     except Exception as exc:
         fallback = {
             "meta": {
@@ -1044,16 +1533,27 @@ def main() -> int:
                 "baud": args.baud,
                 "serial_timeout_s": args.timeout,
                 "credit_minor": args.credit,
+                "credit_display": minor_to_display(args.credit),
+                "scale_factor": 100,
+                "decimal_places": 2,
                 "log_path": str(log_path),
                 "json_path": str(json_path),
                 "txt_path": str(txt_path),
             },
             "steps": [],
-            "cashless_flow": {"steps": [], "exchanges": [], "text": "No flow captured.\n"},
+            "cashless_flow": {
+                "steps": [],
+                "exchanges": [],
+                "text": f"Credit requested: {args.credit} minor units ({minor_to_display(args.credit)})\n\nNo flow captured.\n",
+            },
             "result": {
                 "pass": False,
                 "failure_step": "startup",
                 "failure_reason": str(exc),
+                "credit_minor": args.credit,
+                "credit_display": minor_to_display(args.credit),
+                "scale_factor": 100,
+                "decimal_places": 2,
                 "exception_traceback": traceback.format_exc(),
             },
         }

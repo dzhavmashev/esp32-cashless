@@ -5,7 +5,22 @@
 #include "cashless_session.h"
 #include "machine_phy.h"
 
+
 class ConnectionService;
+
+
+struct GatewayCompatProfileConfig {
+  uint8_t profileId;
+  const char* profileLabel;
+  const char* currencyProfileLabel;
+  uint8_t responseTime;
+  uint8_t options;
+  uint8_t currencyCountryCodeHi;
+  uint8_t currencyCountryCodeLo;
+  const char* currencyEncodingModeLabel;
+  const char* semanticSuspectFieldLabel;
+  bool currencyEncodingChangedFromProfile1;
+};
 
 // Основной сервис MDB-like интеграции с кофемашиной.
 class MdbService {
@@ -189,6 +204,9 @@ class MdbService {
   // Сохраняет новый платёж как pending.
   void requestRecordPayment(unsigned long amountMinor,
                             const String& transactionId = "");
+  // Ставит платёж в очередь для выдачи через coin changer emulator.
+  void requestCoinPayment(unsigned long amountMinor,
+                          const String& transactionId = "");
   // Переводит pending-платёж в активный кредит.
   void requestApproveCredit(unsigned long amountMinor,
                             const String& transactionId = "");
@@ -223,6 +241,13 @@ class MdbService {
   void setCashlessAddress(int address);
   // Переключает response profile только для gateway-compat setup wrapper.
   void setGatewayCompatResponseProfile(uint8_t profileId);
+  // Задаёт экспериментальные значения полей READER CONFIG для подбора.
+  void configureSetupResponseExperiment(bool enabled,
+                                        uint8_t currencyCountryCodeHi,
+                                        uint8_t currencyCountryCodeLo,
+                                        uint8_t responseTime,
+                                        uint8_t options,
+                                        const String& label = "");
   // Включает или выключает инверсию RX.
   void setRxInvertEnabled(bool enabled);
   // Включает или выключает подробный монитор кадров.
@@ -245,6 +270,8 @@ class MdbService {
   void requestExperimentFireOnce();
   // Планирует BEGIN SESSION на следующий POLL.
   void initiateBeginSession(uint16_t amountMinor);
+  // Жёстко сбрасывает runtime-состояние cashless/wrapper handshake.
+  void resetCashlessRuntimeState(bool justResetPending);
   // Запускает CreditFlowStrategy до подтверждённого BEGIN SESSION ACK.
   void startCreditFlowStrategy(uint16_t amountMinor);
   // Принудительно останавливает CreditFlowStrategy.
@@ -281,6 +308,8 @@ class MdbService {
   DialogueKind classifyRxFrameKind(const machine::Frame& frame) const;
   // Возвращает true, если входящий адрес/команда допустимы для нашего cashless dialogue.
   bool matchesCashlessDialogueAddress(uint8_t address, uint8_t command) const;
+  // Возвращает true, если кадр адресован coin changer emulator.
+  bool matchesCoinChangerDialogueAddress(uint8_t address, uint8_t command) const;
   // Классифицирует TX-кадр со стороны reader.
   DialogueKind classifyTxFrameKind(const uint8_t* frame, size_t length,
                                    const char* txKind) const;
@@ -314,24 +343,26 @@ class MdbService {
   String buildSetupClassificationReason(const machine::Frame& frame) const;
   // Возвращает MDB subcommand/setup byte, если он присутствует.
   int16_t setupSubcommandValue(const machine::Frame& frame) const;
+  // Возвращает активный глобально-сконфигурированный profile для gateway compat setup.
+  const GatewayCompatProfileConfig& gatewayCompatProfileConfig() const;
   // Возвращает label выбранного response-profile для gateway compat setup.
   const char* gatewayCompatResponseProfileIdLabel() const;
-  // Возвращает label выбранного currency-profile для gateway compat setup.
-  const char* gatewayCurrencyProfileIdLabel() const;
+  // Возвращает label выбранного Currency/Country Code profile для gateway compat setup.
+  const char* gatewayCurrencyCountryCodeProfileIdLabel() const;
   // Возвращает response time для текущего gateway compat profile.
   uint8_t gatewayCompatResponseTime() const;
   // Возвращает options byte для текущего gateway compat profile.
   uint8_t gatewayCompatResponseOptions() const;
-  // Возвращает старший байт packed BCD country/currency code для gateway profile.
-  uint8_t gatewayCompatCountryCodeHi() const;
-  // Возвращает младший байт packed BCD country/currency code для gateway profile.
-  uint8_t gatewayCompatCountryCodeLo() const;
-  // Возвращает режим кодирования country/currency code.
-  const char* gatewayCurrencyEncodingModeLabel() const;
-  // Возвращает HEX-строку packed BCD country/currency code для текущего gateway profile.
-  String gatewayCurrencyCodeBytesHex() const;
-  // Возвращает true, если currency encoding отличается от profile 1.
-  bool gatewayCurrencyEncodingChangedFromProfile1() const;
+  // Возвращает старший байт packed BCD поля Currency/Country Code для gateway profile.
+  uint8_t gatewayCompatCurrencyCountryCodeHi() const;
+  // Возвращает младший байт packed BCD поля Currency/Country Code для gateway profile.
+  uint8_t gatewayCompatCurrencyCountryCodeLo() const;
+  // Возвращает режим кодирования поля Currency/Country Code.
+  const char* gatewayCurrencyCountryCodeEncodingModeLabel() const;
+  // Возвращает HEX-строку packed BCD поля Currency/Country Code для текущего gateway profile.
+  String gatewayCurrencyCountryCodeBytesHex() const;
+  // Возвращает true, если кодирование поля Currency/Country Code отличается от profile 1.
+  bool gatewayCurrencyCountryCodeChangedFromProfile1() const;
   // Возвращает наиболее подозрительное поле текущего gateway compat profile.
   const char* gatewayCompatSemanticSuspectFieldLabel() const;
   // Возвращает true, если повтор setup похож на долгий wrapper watchdog/retry cycle.
@@ -452,6 +483,8 @@ class MdbService {
   bool emitEvent(const char* eventType, const String& details,
                  String* deliveryMode = nullptr,
                  String* failureReason = nullptr);
+  // Логирует все RX-байты внутри принятого кадра отдельными событиями.
+  void emitObservedRxBytes(const machine::Frame& frame);
   // Публикует изменение состояния cashless-сессии.
   void emitStateChanged();
   // Сохраняет кадр в кольцевой буфер истории.
@@ -478,6 +511,9 @@ class MdbService {
   // Обрабатывает один уже собранный кадр линии.
   void processFrame(const machine::Frame& frame, unsigned long now,
                     bool cashlessFastReplyHandled = false);
+  // Обрабатывает команды, адресованные coin changer emulator.
+  bool handleCoinChangerCommand(const machine::Frame& frame, unsigned long now,
+                                bool fastPath);
   // Разбирает cashless-команды, адресованные нашему устройству.
   void handleCashlessCommand(uint8_t address, uint8_t command,
                              const machine::Frame& frame, unsigned long now);
@@ -499,6 +535,18 @@ class MdbService {
   // Реакция на кадр сразу при его финализации в PHY.
   void handleFastFrameObserved(const machine::Frame& frame,
                                unsigned long finalizedAtMs);
+  // Сбрасывает runtime-состояние coin changer protocol.
+  void resetCoinChangerProtocolState(bool justResetPending);
+  // Очищает очередь активного coin-платежа.
+  void clearCoinChangerPendingPayment();
+  // Возвращает true, если есть queued coin payment или локально отправленный,
+  // но ещё не подтверждённый VMC кредит.
+  bool hasCoinChangerUnresolvedPayment() const;
+  // Возвращает локально отправленный кредит обратно в pending-очередь.
+  void requeueCoinChangerAwaitingAcceptance(const char* reason);
+  // Возвращает true, если кадр попал в compat-tail окно после coin poll.
+  bool shouldIgnoreCoinCompatTail(const machine::Frame& frame,
+                                  unsigned long* deltaUs = nullptr) const;
   // Возвращает true, если одиночный address-byte стоит подождать как префикс split-frame.
   bool shouldTrackCashlessSplitPrefix(const machine::Frame& frame) const;
   // Пытается склеить отложенный cashless address-byte с payload-кадром.
@@ -549,6 +597,26 @@ class MdbService {
   // Отправляет Reader Expansion ID (11 01) response.
   unsigned long sendReaderExpansionIdResponse(
       const char* responseReason = "expansion_response");
+  // Отправляет SETUP response coin changer emulator.
+  unsigned long sendCoinChangerSetupResponse(
+      const char* responseReason = "coin_setup_response");
+  // Отправляет TUBE STATUS response coin changer emulator.
+  unsigned long sendCoinChangerTubeStatusResponse(
+      const char* responseReason = "coin_tube_status");
+  // Отправляет POLL response coin changer emulator.
+  unsigned long sendCoinChangerPollResponse(
+      const char* responseReason = "coin_poll_response",
+      bool compatMode = false);
+  // Отправляет EXPANSION/ID response coin changer emulator.
+  unsigned long sendCoinChangerExpansionIdResponse(
+      const char* responseReason = "coin_expansion_response");
+  // Отправляет EXPANSION diagnostic status response coin changer emulator.
+  unsigned long sendCoinChangerDiagnosticStatusResponse(
+      const char* responseReason = "coin_diag_status");
+  // Выбирает самый крупный разрешённый coin type для остатка платежа.
+  bool selectCoinChangerCoinType(unsigned long remainingScaled,
+                                 uint8_t& coinType,
+                                 uint8_t& coinValue) const;
   // Выбирает и отправляет немедленный ответ на POLL без лишних логов до TX.
   unsigned long sendCashlessPollReply(unsigned long now, unsigned long rxEndedUs,
                                       uint8_t& replyKind, bool& readerEnabled);
@@ -567,6 +635,11 @@ class MdbService {
   void markSetupResponseAckReceived(unsigned long ackTsUs);
   void markSetupResponseAckMissing(const char* reason,
                                    const String& extraJson = "");
+  // Публикует сводный audit при признаках отклонения SETUP RESPONSE со стороны VMC.
+  void emitSetupResponseRejectionAudit(const char* basis, unsigned long tsUs,
+                                       const machine::Frame* followupFrame = nullptr,
+                                       const char* followupKind = nullptr,
+                                       const String& extraJson = "");
   // Отправляет NAK.
   void sendNak();
   // Отправляет RET.
@@ -680,6 +753,21 @@ class MdbService {
   unsigned long foreignFrameCount_ = 0;
   unsigned long ambiguousFrameCount_ = 0;
   unsigned long invalidFrameCount_ = 0;
+  bool coinChangerJustResetPending_ = true;
+  uint16_t coinChangerEnabledMask_ = 0;
+  uint16_t coinChangerManualDispenseMask_ = 0xFFFFU;
+  uint32_t coinChangerFeatureEnableMask_ = 0;
+  unsigned long lastCoinCompatPollObservedUs_ = 0;
+  unsigned long lastCoinCompatPollReplyTxUs_ = 0;
+  unsigned long coinCompatTailIgnoreUntilUs_ = 0;
+  unsigned long coinChangerPendingAmountMinor_ = 0;
+  unsigned long coinChangerPendingScaled_ = 0;
+  unsigned long coinChangerAwaitingVmcAmountMinor_ = 0;
+  unsigned long coinChangerAwaitingVmcScaled_ = 0;
+  unsigned long coinChangerLastCreditReplyTxUs_ = 0;
+  unsigned long coinChangerQueuedAtMs_ = 0;
+  String coinChangerPendingTransactionId_;
+  String coinChangerAwaitingVmcTransactionId_;
   bool isReaderEnabled_ = false;
   bool cashlessJustResetPending_ = true;
   bool cashlessSetupSeen_ = false;
@@ -710,7 +798,10 @@ class MdbService {
   bool setupFastPathEnabled_ = true;
   bool lastSetupFastPathUsed_ = false;
   bool currentSetupResponseGatewayCompat_ = false;
-  uint8_t gatewayCompatResponseProfileId_ = 0;
+  // Default to the repo-like gateway profile first. Keep the runtime pinned
+  // to profile 1 for now: profile 2 (telephone-country-code variant 09 96)
+  // is rejected by the observed VMC with a RESET after READER CONFIG.
+  uint8_t gatewayCompatResponseProfileId_ = 1;
   unsigned long gatewayCompatLastSetupResponseUs_ = 0;
   unsigned long gatewayCompatFollowupTimeoutUs_ = 250000UL;
   bool gatewayCompatFollowupActive_ = false;
@@ -752,8 +843,14 @@ class MdbService {
   String repeatedSetupInterpretation_;
   String setupResponseProfileId_;
   String setupResponseSuspectField_;
-  String gatewayCurrencyProfileId_;
-  String currencyCodeEncodingMode_;
+  String gatewayCurrencyCountryCodeProfileId_;
+  String currencyCountryCodeEncodingMode_;
+  bool setupResponseExperimentEnabled_ = false;
+  uint8_t setupResponseExperimentCurrencyCountryCodeHi_ = 0;
+  uint8_t setupResponseExperimentCurrencyCountryCodeLo_ = 0;
+  uint8_t setupResponseExperimentResponseTime_ = 0;
+  uint8_t setupResponseExperimentOptions_ = 0;
+  String setupResponseExperimentLabel_;
   String gatewayCompatExpectedFollowup_;
   String gatewayCompatRetryInterpretation_;
   String gatewayCompatLastOutcome_;

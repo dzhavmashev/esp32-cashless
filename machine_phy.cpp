@@ -8,10 +8,12 @@
 #include <soc/io_mux_reg.h>
 #include <xtensa/core-macros.h>
 
+#include "device_config.h"
+
 namespace {
 constexpr uart_port_t kMachineUartNum = UART_NUM_2;
-constexpr int kForcedTxPin = 19;
-constexpr int kForcedRxPin = 14;
+constexpr int kForcedTxPin = MDB_TX_PIN;
+constexpr int kForcedRxPin = MDB_RX_PIN;
 constexpr unsigned long kContinuationWindowMs = 8;
 constexpr unsigned long kFastFrameGapUs = 5000;
 constexpr unsigned long kSessionBreakGapMs = 120000;
@@ -24,7 +26,6 @@ constexpr unsigned long kMdbCharacterTxUs = kMdbBitUs * 12UL;
 constexpr uint8_t kStrictSoftwareDecoderMode = 3;
 constexpr int kUartEventQueueSize = 20;
 constexpr size_t kUartRxBufferSize = 1024;
-constexpr uint32_t kUartTaskStackSize = 8192;
 constexpr UBaseType_t kUartTaskPriority = 5;
 constexpr gpio_num_t kHeartbeatLedPin = GPIO_NUM_2;
 constexpr const char* kPhyLogTag = "MachinePhy";
@@ -269,10 +270,10 @@ esp_err_t MachinePhy::activate(bool forceReinit) {
   uart_set_rx_timeout(kMachineUartNum, kMdbRxTimeoutChars);
   uart_flush_input(kMachineUartNum);
   applyLineInversion();
-  esp_rom_gpio_pad_select_gpio(GPIO_NUM_14);
-  PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[GPIO_NUM_14], PIN_FUNC_GPIO);
-  gpio_set_direction(GPIO_NUM_14, GPIO_MODE_INPUT);
-  gpio_set_pull_mode(GPIO_NUM_14, GPIO_PULLUP_ONLY);
+  esp_rom_gpio_pad_select_gpio(static_cast<gpio_num_t>(kForcedRxPin));
+  PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[kForcedRxPin], PIN_FUNC_GPIO);
+  gpio_set_direction(static_cast<gpio_num_t>(kForcedRxPin), GPIO_MODE_INPUT);
+  gpio_set_pull_mode(static_cast<gpio_num_t>(kForcedRxPin), GPIO_PULLUP_ONLY);
   gpio_set_intr_type(static_cast<gpio_num_t>(kForcedRxPin), GPIO_INTR_ANYEDGE);
   esp_err_t isrInstall = gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
   if (isrInstall != ESP_OK && isrInstall != ESP_ERR_INVALID_STATE) {
@@ -318,7 +319,7 @@ void MachinePhy::startEventTask() {
     return;
   }
   vTaskDelay(pdMS_TO_TICKS(100));
-  xTaskCreatePinnedToCore(&MachinePhy::uartEventTaskThunk, "mdb_uart_evt", kUartTaskStackSize,
+  xTaskCreatePinnedToCore(&MachinePhy::uartEventTaskThunk, "mdb_uart_evt", kMdbUartEvtTaskStackBytes,
                           this, kUartTaskPriority, &uartEventTask_, 1);
 }
 
@@ -359,24 +360,26 @@ esp_err_t MachinePhy::debugForceRawSniffer() {
   portENTER_CRITICAL(&stateLock_);
   resetDecoderRuntimeLocked(micros(), 1U);
   const uint8_t currentRawLevel =
-      static_cast<uint8_t>(gpio_get_level(GPIO_NUM_14) & 0x1U);
+      static_cast<uint8_t>(
+          gpio_get_level(static_cast<gpio_num_t>(kForcedRxPin)) & 0x1U);
   resetDecoderRuntimeLocked(micros(), normalizeRxLevel(currentRawLevel));
   portEXIT_CRITICAL(&stateLock_);
 
-  gpio_reset_pin(GPIO_NUM_14);
-  esp_rom_gpio_pad_select_gpio(GPIO_NUM_14);
-  PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[GPIO_NUM_14], PIN_FUNC_GPIO);
-  gpio_set_direction(GPIO_NUM_14, GPIO_MODE_INPUT);
-  gpio_set_pull_mode(GPIO_NUM_14, GPIO_PULLUP_ONLY);
-  gpio_set_intr_type(GPIO_NUM_14, GPIO_INTR_ANYEDGE);
+  gpio_reset_pin(static_cast<gpio_num_t>(kForcedRxPin));
+  esp_rom_gpio_pad_select_gpio(static_cast<gpio_num_t>(kForcedRxPin));
+  PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[kForcedRxPin], PIN_FUNC_GPIO);
+  gpio_set_direction(static_cast<gpio_num_t>(kForcedRxPin), GPIO_MODE_INPUT);
+  gpio_set_pull_mode(static_cast<gpio_num_t>(kForcedRxPin), GPIO_PULLUP_ONLY);
+  gpio_set_intr_type(static_cast<gpio_num_t>(kForcedRxPin), GPIO_INTR_ANYEDGE);
 
   esp_err_t err = gpio_install_isr_service(ESP_INTR_FLAG_IRAM);
   if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
     lastInitError_ = static_cast<int>(err);
     return err;
   }
-  gpio_isr_handler_remove(GPIO_NUM_14);
-  err = gpio_isr_handler_add(GPIO_NUM_14, &MachinePhy::rxGpioIsrThunk, this);
+  gpio_isr_handler_remove(static_cast<gpio_num_t>(kForcedRxPin));
+  err = gpio_isr_handler_add(static_cast<gpio_num_t>(kForcedRxPin),
+                             &MachinePhy::rxGpioIsrThunk, this);
   if (err != ESP_OK) {
     lastInitError_ = static_cast<int>(err);
     return err;
@@ -1805,7 +1808,11 @@ unsigned long MachinePhy::write(const uint8_t* data, size_t length) {
   const uint32_t frameId = ++txFrameCounter_;
   unsigned long firstTxUs = 0;
   for (size_t i = 0; i < length; ++i) {
-    const uint8_t ninthBit = (i + 1U == length) ? 1U : 0U;
+    // MDB cashless slave response: every byte is sent as a data byte
+    // (mode/address bit = 0). The old behavior incorrectly marked the last
+    // byte of the frame with ninthBit=1, which makes the checksum/status byte
+    // look like an address/mode byte to the VMC.
+    const uint8_t ninthBit = 0U;
     const unsigned long txUs = writeSlaveByte(frameId, i, data[i], ninthBit);
     if (firstTxUs == 0 && txUs != 0) {
       firstTxUs = txUs;

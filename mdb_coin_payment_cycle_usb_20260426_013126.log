@@ -1,0 +1,164 @@
+[2026-04-26T01:31:26.216+06:00] INFO serial_open port=/dev/ttyUSB0 baud=115200
+
+=== Attempt 1 / txid=coin-cycle-01-62bb898c ===
+[2026-04-26T01:31:26.981+06:00] HOST USB command=mdb_monitor_start payload={} json={"payload":{"command":"mdb_monitor_start","payload":{}},"type":"command"} note=enable detailed MDB monitor
+[2026-04-26T01:31:27.595+06:00] HOST USB command=mdb_rx_invert_off payload={} json={"payload":{"command":"mdb_rx_invert_off","payload":{}},"type":"command"} note=force current board polarity policy
+[2026-04-26T01:31:28.212+06:00] HOST USB command=mdb_passive_sniff_on payload={} json={"payload":{"command":"mdb_passive_sniff_on","payload":{}},"type":"command"} note=enable passive sniff
+[2026-04-26T01:31:28.829+06:00] HOST USB command=mdb_clear_session payload={} json={"payload":{"command":"mdb_clear_session","payload":{}},"type":"command"} note=clear stale MDB business state
+[2026-04-26T01:31:29.447+06:00] HOST USB command=mdb_sniff_clear payload={} json={"payload":{"command":"mdb_sniff_clear","payload":{}},"type":"command"} note=clear passive sniff history
+[2026-04-26T01:31:27.025+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_monitor_start
+[2026-04-26T01:31:27.033+06:00] EVT    monitor_started -> Подробный MDB monitor включен
+[2026-04-26T01:31:27.651+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_rx_invert_off
+[2026-04-26T01:31:27.660+06:00] EVT    rx_invert_changed -> RX invert changed: enabled=False
+[2026-04-26T01:31:28.230+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_passive_sniff_on
+[2026-04-26T01:31:28.237+06:00] EVT    passive_sniff_changed -> Passive sniff changed: enabled=True
+[2026-04-26T01:31:28.858+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_clear_session
+[2026-04-26T01:31:28.867+06:00] EVT    session_cleared -> Локальная MDB-сессия очищена
+[2026-04-26T01:31:28.892+06:00] EVT    cashless_runtime_state_cleared -> cashless_runtime_state_cleared: {"expected_next_rx_kind":"POLL","expected_next_tx_kind":"just_reset_status","just_reset_pending":true,"protocol_state_was_dirty":false,"reader_state":"UNINITIALIZED"}
+[2026-04-26T01:31:28.918+06:00] EVT    state_changed -> Бизнес-состояние изменилось: state=ready_no_funds, coin_pending=0, coin_awaiting_vmc=0
+[2026-04-26T01:31:29.496+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_sniff_clear
+[2026-04-26T01:31:29.503+06:00] EVT    sniff_cleared -> История passive sniff очищена
+[2026-04-26T01:31:31.324+06:00] HOST USB command=pay payload={"amount":100,"transaction_id":"coin-cycle-01-62bb898c","transport":"mdb"} json={"payload":{"command":"pay","payload":{"amount":100,"transaction_id":"coin-cycle-01-62bb898c","transport":"mdb"}},"type":"command"} note=queue one MDB coin payment attempt over USB JSON command
+[2026-04-26T01:31:31.373+06:00] DEVICE command_received -> Устройство получило USB-команду: pay
+[2026-04-26T01:31:31.390+06:00] EVT    payment_received -> Устройство приняло команду pay: amount=100 minor (1.00), txid=coin-cycle-01-62bb898c
+[2026-04-26T01:31:31.405+06:00] EVT    coin_payment_queued -> Платеж поставлен в очередь coin-emulator: amount=100 minor (1.00), scaled=1, txid=coin-cycle-01-62bb898c
+[2026-04-26T01:31:31.438+06:00] EVT    state_changed -> Бизнес-состояние изменилось: state=ready_no_funds, coin_pending=1, coin_awaiting_vmc=0
+[2026-04-26T01:31:36.960+06:00] EVT    coin_poll_reply_suppressed -> Ответ на coin poll подавлен: reason=compat_credit_priority, kind=just_reset, pending_scaled=1, awaiting_vmc_scaled=0
+[2026-04-26T01:31:36.991+06:00] TX     phy_tx_raw raw=40 hint=raw MDB frame -> phy_tx_raw: raw=40; raw MDB frame
+[2026-04-26T01:31:37.010+06:00] EVT    tx_bit_timing -> tx_bit_timing: {"bit_period_us":104,"byte_index":0,"character_tx_us":1248,"end_ts_us":2483184036,"start_ts_us":2483182788,"tx_kind":"coin_poll_credit","tx_scope":"mdb_response"}
+[2026-04-26T01:31:37.041+06:00] TX     phy_tx_raw raw=00 hint=ACK byte -> phy_tx_raw: raw=00; ACK byte
+[2026-04-26T01:31:37.063+06:00] EVT    tx_bit_timing -> tx_bit_timing: {"bit_period_us":104,"byte_index":1,"character_tx_us":1248,"end_ts_us":2483185329,"start_ts_us":2483184081,"tx_kind":"coin_poll_credit","tx_scope":"mdb_response"}
+[2026-04-26T01:31:37.090+06:00] TX     phy_tx_raw raw=40 hint=raw MDB frame -> phy_tx_raw: raw=40; raw MDB frame
+[2026-04-26T01:31:37.112+06:00] EVT    tx_bit_timing -> tx_bit_timing: {"bit_period_us":104,"byte_index":2,"character_tx_us":1248,"end_ts_us":2483186595,"start_ts_us":2483185347,"tx_kind":"coin_poll_credit","tx_scope":"mdb_response"}
+[2026-04-26T01:31:37.129+06:00] EVT    response_path_state -> response_path_state: {"reason":"coin_poll_observed_compat","state":"RESPONSE_DECISION","timestamp_us":2483182499}
+[2026-04-26T01:31:37.149+06:00] EVT    response_decision -> response_decision: {"last_rx_data_byte":0,"last_rx_ninth_bit":false,"last_rx_raw9":0,"reason":"coin_poll_observed_compat","timestamp_us":2483182499,"will_respond":true}
+[2026-04-26T01:31:37.163+06:00] EVT    response_path_state -> response_path_state: {"reason":"coin_poll_credit","state":"TX_PENDING","timestamp_us":2483182499}
+[2026-04-26T01:31:37.177+06:00] EVT    response_queue_enqueue -> response_queue_enqueue: {"queue_depth":1,"timestamp_us":2483182499,"tx_kind":"coin_poll_credit"}
+[2026-04-26T01:31:37.199+06:00] EVT    tx_frame_prepared -> tx_frame_prepared: {"byte_count":3,"decoded_kind":"UNKNOWN","first_raw9":64,"frame_hex":"40 00 40","last_raw9":64,"rx_ended_us":0,"timestamp_us":2483182499,"tx_kind":"coin_poll_credit"}
+[2026-04-26T01:31:37.216+06:00] EVT    tx_unexpected_without_mapping -> tx_unexpected_without_mapping: {"actual_tx_kind":"coin_poll_credit","rx_kind":"UNKNOWN","timestamp_us":2483182788}
+[2026-04-26T01:31:37.230+06:00] EVT    response_path_state -> response_path_state: {"reason":"coin_poll_credit","state":"TX_SENDING","timestamp_us":2483182788}
+[2026-04-26T01:31:37.243+06:00] EVT    response_queue_dequeue -> response_queue_dequeue: {"queue_depth":0,"timestamp_us":2483182788,"tx_kind":"coin_poll_credit"}
+[2026-04-26T01:31:37.257+06:00] EVT    tx_start -> tx_start: {"frame_hex":"40 00 40","timestamp_us":2483182788,"tx_kind":"coin_poll_credit"}
+[2026-04-26T01:31:37.274+06:00] EVT    tx_bitstream_start -> tx_bitstream_start: {"bit_period_us":104,"character_tx_us":1248,"timestamp_us":2483182788,"tx_kind":"coin_poll_credit"}
+[2026-04-26T01:31:37.288+06:00] EVT    tx_gpio_assert_low -> tx_gpio_assert_low: {"mdb_line_level":"low","timestamp_us":2483182788,"tx_kind":"coin_poll_credit"}
+[2026-04-26T01:31:37.307+06:00] EVT    tx_done -> tx_done: {"duration_drift_us":81,"expected_done_us":2483186532,"frame_hex":"40 00 40","timestamp_us":2483186613,"tx_kind":"coin_poll_credit"}
+[2026-04-26T01:31:37.321+06:00] EVT    tx_line_release -> tx_line_release: {"mdb_line_level":"idle_high","timestamp_us":2483186613,"tx_kind":"coin_poll_credit"}
+[2026-04-26T01:31:37.337+06:00] EVT    tx_gpio_release_high -> tx_gpio_release_high: {"mdb_line_level":"high","timestamp_us":2483186613,"tx_kind":"coin_poll_credit"}
+[2026-04-26T01:31:37.365+06:00] EVT    dialogue_trace -> Dialogue trace: direction=TX_TO_MACHINE, kind=UNKNOWN, raw9=64, data_byte=64, ninth_bit=False
+[2026-04-26T01:31:37.379+06:00] EVT    response_path_state -> response_path_state: {"reason":"coin_poll_credit","state":"TX_DONE","timestamp_us":2483186613}
+[2026-04-26T01:31:37.393+06:00] EVT    response_path_state -> response_path_state: {"reason":"coin_poll_credit","state":"TX_RELEASED","timestamp_us":2483186613}
+[2026-04-26T01:31:37.407+06:00] EVT    response_path_state -> response_path_state: {"reason":"tx_complete","state":"IDLE","timestamp_us":2483186613}
+[2026-04-26T01:31:37.427+06:00] EVT    tx_duration_observed -> tx_duration_observed: {"actual_done_us":2483186613,"duration_drift_us":81,"expected_done_us":2483186532,"tx_kind":"coin_poll_credit"}
+[2026-04-26T01:31:37.452+06:00] TX     coin_poll_reply_sent raw=40 00 40 hint=coin credit reply for one scaled credit -> Отправлен ответ на coin poll: kind=credit, raw=40 00 40, compat=True, emitted_scaled=1, remaining_scaled=0; coin credit reply for 1 scaled credit via coin type 0
+[2026-04-26T01:31:37.474+06:00] TX     coin_reply_sent_local raw=40 00 40 hint=coin credit reply for one scaled credit -> Локально отправлен credit reply: raw=40 00 40, emitted_scaled=1, remaining_scaled=0, awaiting_vmc_scaled=1
+[2026-04-26T01:31:37.493+06:00] EVT    coin_credit_assumed_local_only -> Прошивка считает кредит только локально отправленным, не подтвержденным VMC: awaiting_vmc_scaled=1, remaining_scaled=0
+[2026-04-26T01:31:37.518+06:00] EVT    coin_payment_progress -> Прогресс coin-платежа: emitted_scaled=1, remaining_scaled=0, awaiting_vmc_scaled=1, vmc_credit_accepted=False
+[2026-04-26T01:31:37.538+06:00] EVT    coin_payment_completed -> Coin payment completed по версии прошивки: vmc_credit_accepted=False, scope=local_reply_only, txid=coin-cycle-01-62bb898c
+[2026-04-26T01:31:37.561+06:00] RX     coin_poll_observed_compat -> Наблюден compat poll от VMC: fast_path=True, pending_before=1, remaining_after=0
+[2026-04-26T01:31:37.643+06:00] RX     rx_frame raw=FE hint=compat coin poll from VMC -> Сырой кадр от VMC: raw=FE, normalized=FE, address=31, command=6, checksum_valid=True
+[2026-04-26T01:31:37.660+06:00] EVT    sniff_byte -> sniff_byte: {"gap_before_ms":1408605,"high_bit":true,"index":0,"raw":254,"ts_ms":20567,"value7":254}
+[2026-04-26T01:31:37.710+06:00] EVT    sniff_frame_raw -> sniff_frame_raw: {"continuation_appended_bytes":0,"continuation_attempted":false,"continuation_fail_reason":"none","continuation_result":"not_attempted","continuation_wait_ms":0,"continuation_wait_started_ms":0,"end_reason":"gap_timeout","end_reason_code":1,"frame_capture_quality":100,"frame_end_ms":20567,"frame_gap_after_ms":2462593,"frame_gap_before_ms":1408605,"frame_start_ms":20567,"maybe_merged":false,"maybe_partial":false,"raw_hex":"FE","reboot_gap_detected":true,"session_break_gap_detected":true,"truncated":false}
+[2026-04-26T01:31:37.724+06:00] EVT    sniff_frame_normalized -> sniff_frame_normalized: {"has_high_bit":true,"length":1,"normalized_hex":"FE"}
+[2026-04-26T01:31:37.744+06:00] RX     sniff_command_candidate -> Sniffer предложил команду: raw=None, normalized=None, candidate=None
+[2026-04-26T01:31:37.758+06:00] EVT    checksum_pass -> checksum_pass: {"candidate_address":31,"candidate_command":6,"hex":"FE","strategy":"A"}
+[2026-04-26T01:31:37.780+06:00] RX     sniff_command_candidate -> Sniffer предложил команду: raw=None, normalized=None, candidate=None
+[2026-04-26T01:31:37.794+06:00] EVT    checksum_pass -> checksum_pass: {"candidate_address":15,"candidate_command":6,"hex":"7E","strategy":"B"}
+[2026-04-26T01:31:37.816+06:00] RX     sniff_command_candidate -> Sniffer предложил команду: raw=None, normalized=None, candidate=None
+[2026-04-26T01:31:37.827+06:00] EVT    checksum_pass -> checksum_pass: {"candidate_address":15,"candidate_command":6,"hex":"7E","strategy":"C"}
+[2026-04-26T01:31:37.849+06:00] RX     sniff_command_candidate -> Sniffer предложил команду: raw=None, normalized=None, candidate=None
+[2026-04-26T01:31:37.863+06:00] EVT    checksum_pass -> checksum_pass: {"candidate_address":31,"candidate_command":6,"hex":"FE","strategy":"D"}
+[2026-04-26T01:31:37.885+06:00] RX     sniff_command_candidate -> Sniffer предложил команду: raw=None, normalized=None, candidate=None
+[2026-04-26T01:31:37.899+06:00] EVT    checksum_pass -> checksum_pass: {"candidate_address":15,"candidate_command":6,"hex":"7E","strategy":"E"}
+[2026-04-26T01:31:37.927+06:00] EVT    dialogue_trace -> Dialogue trace: direction=RX_FROM_MACHINE, kind=UNKNOWN, raw9=510, data_byte=254, ninth_bit=True
+[2026-04-26T01:31:37.955+06:00] RX     rx_frame_accepted raw=FE hint=compat coin poll from VMC -> Кадр от VMC принят декодером: raw=FE, data=FE, decoded_kind=UNKNOWN, address=31, command=6
+[2026-04-26T01:31:37.988+06:00] RX     rx_frame_tentative raw=FE hint=compat coin poll from VMC -> Кадр от VMC получил tentative decode: raw=FE, tentative_kind=FOREIGN_UNKNOWN_COMMAND, reason=foreign_address_31_command_6
+[2026-04-26T01:31:38.018+06:00] EVT    state_changed -> Бизнес-состояние изменилось: state=ready_no_funds, coin_pending=0, coin_awaiting_vmc=1
+[2026-04-26T01:31:39.601+06:00] HOST USB command=mdb_sniff_recent payload={} json={"payload":{"command":"mdb_sniff_recent","payload":{}},"type":"command"} note=request sniff snapshot
+[2026-04-26T01:31:40.221+06:00] HOST USB command=mdb_clear_session payload={} json={"payload":{"command":"mdb_clear_session","payload":{}},"type":"command"} note=cleanup after attempt
+[2026-04-26T01:31:39.653+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_sniff_recent
+[2026-04-26T01:31:39.665+06:00] EVT    sniff_recent_meta -> sniff_recent_meta: {"returned_frames":1,"stored_frames":1}
+[2026-04-26T01:31:39.710+06:00] EVT    sniff_recent_frame -> sniff_recent_frame: {"best_strategy":{"candidate_address":15,"candidate_command":6,"checksum_valid":true,"confidence":75,"name":"E"},"continuation_appended_bytes":0,"continuation_attempted":false,"expected_address":1,"frame_end_reason":"gap_timeout","frame_gap_after_ms":2462593,"frame_gap_before_ms":1408605,"index":0,"length":1,"maybe_merged":false,"maybe_partial":false,"normalized_hex":"FE","raw_hex":"FE","started_at_ms":20567,"timestamp_ms":20567}
+[2026-04-26T01:31:40.234+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_clear_session
+[2026-04-26T01:31:40.242+06:00] EVT    session_cleared -> Локальная MDB-сессия очищена
+[2026-04-26T01:31:40.268+06:00] EVT    cashless_runtime_state_cleared -> cashless_runtime_state_cleared: {"expected_next_rx_kind":"POLL","expected_next_tx_kind":"just_reset_status","just_reset_pending":true,"protocol_state_was_dirty":true,"reader_state":"UNINITIALIZED"}
+[2026-04-26T01:31:40.294+06:00] EVT    state_changed -> Бизнес-состояние изменилось: state=ready_no_funds, coin_pending=0, coin_awaiting_vmc=0
+Attempt outcome: local_reply_only_completed
+  Sniff recent:
+    meta={"returned_frames":1,"stored_frames":1}
+    0. raw=FE normalized=FE candidate_address=15 candidate_command=6 hint=compat coin poll from VMC
+
+=== Attempt 2 / txid=coin-cycle-02-089b8442 ===
+[2026-04-26T01:31:42.092+06:00] HOST USB command=mdb_monitor_start payload={} json={"payload":{"command":"mdb_monitor_start","payload":{}},"type":"command"} note=enable detailed MDB monitor
+[2026-04-26T01:31:42.710+06:00] HOST USB command=mdb_rx_invert_off payload={} json={"payload":{"command":"mdb_rx_invert_off","payload":{}},"type":"command"} note=force current board polarity policy
+[2026-04-26T01:31:43.321+06:00] HOST USB command=mdb_passive_sniff_on payload={} json={"payload":{"command":"mdb_passive_sniff_on","payload":{}},"type":"command"} note=enable passive sniff
+[2026-04-26T01:31:43.940+06:00] HOST USB command=mdb_clear_session payload={} json={"payload":{"command":"mdb_clear_session","payload":{}},"type":"command"} note=clear stale MDB business state
+[2026-04-26T01:31:44.560+06:00] HOST USB command=mdb_sniff_clear payload={} json={"payload":{"command":"mdb_sniff_clear","payload":{}},"type":"command"} note=clear passive sniff history
+[2026-04-26T01:31:42.122+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_monitor_start
+[2026-04-26T01:31:42.130+06:00] EVT    monitor_started -> Подробный MDB monitor включен
+[2026-04-26T01:31:42.746+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_rx_invert_off
+[2026-04-26T01:31:42.756+06:00] EVT    rx_invert_changed -> RX invert changed: enabled=False
+[2026-04-26T01:31:43.373+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_passive_sniff_on
+[2026-04-26T01:31:43.380+06:00] EVT    passive_sniff_changed -> Passive sniff changed: enabled=True
+[2026-04-26T01:31:43.996+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_clear_session
+[2026-04-26T01:31:44.003+06:00] EVT    session_cleared -> Локальная MDB-сессия очищена
+[2026-04-26T01:31:44.029+06:00] EVT    cashless_runtime_state_cleared -> cashless_runtime_state_cleared: {"expected_next_rx_kind":"POLL","expected_next_tx_kind":"just_reset_status","just_reset_pending":true,"protocol_state_was_dirty":false,"reader_state":"UNINITIALIZED"}
+[2026-04-26T01:31:44.055+06:00] EVT    state_changed -> Бизнес-состояние изменилось: state=ready_no_funds, coin_pending=0, coin_awaiting_vmc=0
+[2026-04-26T01:31:44.581+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_sniff_clear
+[2026-04-26T01:31:44.588+06:00] EVT    sniff_cleared -> История passive sniff очищена
+[2026-04-26T01:31:46.432+06:00] HOST USB command=pay payload={"amount":100,"transaction_id":"coin-cycle-02-089b8442","transport":"mdb"} json={"payload":{"command":"pay","payload":{"amount":100,"transaction_id":"coin-cycle-02-089b8442","transport":"mdb"}},"type":"command"} note=queue one MDB coin payment attempt over USB JSON command
+[2026-04-26T01:31:46.458+06:00] DEVICE command_received -> Устройство получило USB-команду: pay
+[2026-04-26T01:31:46.474+06:00] EVT    payment_received -> Устройство приняло команду pay: amount=100 minor (1.00), txid=coin-cycle-02-089b8442
+[2026-04-26T01:31:46.489+06:00] EVT    coin_payment_queued -> Платеж поставлен в очередь coin-emulator: amount=100 minor (1.00), scaled=1, txid=coin-cycle-02-089b8442
+[2026-04-26T01:31:46.523+06:00] EVT    state_changed -> Бизнес-состояние изменилось: state=ready_no_funds, coin_pending=1, coin_awaiting_vmc=0
+[2026-04-26T01:32:46.498+06:00] EVT    coin_payment_expired -> Coin payment истек: pending_scaled=None, awaiting_vmc_scaled=0, vmc_credit_accepted=False, reason=None
+[2026-04-26T01:32:46.527+06:00] EVT    state_changed -> Бизнес-состояние изменилось: state=ready_no_funds, coin_pending=0, coin_awaiting_vmc=0
+[2026-04-26T01:32:48.527+06:00] HOST USB command=mdb_sniff_recent payload={} json={"payload":{"command":"mdb_sniff_recent","payload":{}},"type":"command"} note=request sniff snapshot
+[2026-04-26T01:32:49.137+06:00] HOST USB command=mdb_clear_session payload={} json={"payload":{"command":"mdb_clear_session","payload":{}},"type":"command"} note=cleanup after attempt
+[2026-04-26T01:32:48.547+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_sniff_recent
+[2026-04-26T01:32:48.558+06:00] EVT    sniff_recent_meta -> sniff_recent_meta: {"returned_frames":0,"stored_frames":0}
+[2026-04-26T01:32:49.188+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_clear_session
+[2026-04-26T01:32:49.196+06:00] EVT    session_cleared -> Локальная MDB-сессия очищена
+[2026-04-26T01:32:49.221+06:00] EVT    cashless_runtime_state_cleared -> cashless_runtime_state_cleared: {"expected_next_rx_kind":"POLL","expected_next_tx_kind":"just_reset_status","just_reset_pending":true,"protocol_state_was_dirty":false,"reader_state":"UNINITIALIZED"}
+[2026-04-26T01:32:49.248+06:00] EVT    state_changed -> Бизнес-состояние изменилось: state=ready_no_funds, coin_pending=0, coin_awaiting_vmc=0
+Attempt outcome: expired_without_vmc_acceptance
+  Sniff recent:
+    meta={"returned_frames":0,"stored_frames":0}
+    no sniff frames captured
+
+=== Attempt 3 / txid=coin-cycle-03-b2c5d332 ===
+[2026-04-26T01:32:51.006+06:00] HOST USB command=mdb_monitor_start payload={} json={"payload":{"command":"mdb_monitor_start","payload":{}},"type":"command"} note=enable detailed MDB monitor
+[2026-04-26T01:32:51.618+06:00] HOST USB command=mdb_rx_invert_off payload={} json={"payload":{"command":"mdb_rx_invert_off","payload":{}},"type":"command"} note=force current board polarity policy
+[2026-04-26T01:32:52.234+06:00] HOST USB command=mdb_passive_sniff_on payload={} json={"payload":{"command":"mdb_passive_sniff_on","payload":{}},"type":"command"} note=enable passive sniff
+[2026-04-26T01:32:52.848+06:00] HOST USB command=mdb_clear_session payload={} json={"payload":{"command":"mdb_clear_session","payload":{}},"type":"command"} note=clear stale MDB business state
+[2026-04-26T01:32:53.460+06:00] HOST USB command=mdb_sniff_clear payload={} json={"payload":{"command":"mdb_sniff_clear","payload":{}},"type":"command"} note=clear passive sniff history
+[2026-04-26T01:32:51.024+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_monitor_start
+[2026-04-26T01:32:51.032+06:00] EVT    monitor_started -> Подробный MDB monitor включен
+[2026-04-26T01:32:51.648+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_rx_invert_off
+[2026-04-26T01:32:51.657+06:00] EVT    rx_invert_changed -> RX invert changed: enabled=False
+[2026-04-26T01:32:52.275+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_passive_sniff_on
+[2026-04-26T01:32:52.282+06:00] EVT    passive_sniff_changed -> Passive sniff changed: enabled=True
+[2026-04-26T01:32:52.896+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_clear_session
+[2026-04-26T01:32:52.904+06:00] EVT    session_cleared -> Локальная MDB-сессия очищена
+[2026-04-26T01:32:52.929+06:00] EVT    cashless_runtime_state_cleared -> cashless_runtime_state_cleared: {"expected_next_rx_kind":"POLL","expected_next_tx_kind":"just_reset_status","just_reset_pending":true,"protocol_state_was_dirty":false,"reader_state":"UNINITIALIZED"}
+[2026-04-26T01:32:52.956+06:00] EVT    state_changed -> Бизнес-состояние изменилось: state=ready_no_funds, coin_pending=0, coin_awaiting_vmc=0
+[2026-04-26T01:32:53.481+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_sniff_clear
+[2026-04-26T01:32:53.489+06:00] EVT    sniff_cleared -> История passive sniff очищена
+[2026-04-26T01:32:55.333+06:00] HOST USB command=pay payload={"amount":100,"transaction_id":"coin-cycle-03-b2c5d332","transport":"mdb"} json={"payload":{"command":"pay","payload":{"amount":100,"transaction_id":"coin-cycle-03-b2c5d332","transport":"mdb"}},"type":"command"} note=queue one MDB coin payment attempt over USB JSON command
+[2026-04-26T01:32:55.359+06:00] DEVICE command_received -> Устройство получило USB-команду: pay
+[2026-04-26T01:32:55.376+06:00] EVT    payment_received -> Устройство приняло команду pay: amount=100 minor (1.00), txid=coin-cycle-03-b2c5d332
+[2026-04-26T01:32:55.391+06:00] EVT    coin_payment_queued -> Платеж поставлен в очередь coin-emulator: amount=100 minor (1.00), scaled=1, txid=coin-cycle-03-b2c5d332
+[2026-04-26T01:32:55.424+06:00] EVT    state_changed -> Бизнес-состояние изменилось: state=ready_no_funds, coin_pending=1, coin_awaiting_vmc=0
+[2026-04-26T01:33:55.402+06:00] EVT    coin_payment_expired -> Coin payment истек: pending_scaled=None, awaiting_vmc_scaled=0, vmc_credit_accepted=False, reason=None
+[2026-04-26T01:33:55.430+06:00] EVT    state_changed -> Бизнес-состояние изменилось: state=ready_no_funds, coin_pending=0, coin_awaiting_vmc=0
+[2026-04-26T01:33:57.441+06:00] HOST USB command=mdb_sniff_recent payload={} json={"payload":{"command":"mdb_sniff_recent","payload":{}},"type":"command"} note=request sniff snapshot
+[2026-04-26T01:33:58.060+06:00] HOST USB command=mdb_clear_session payload={} json={"payload":{"command":"mdb_clear_session","payload":{}},"type":"command"} note=cleanup after attempt
+[2026-04-26T01:33:57.453+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_sniff_recent
+[2026-04-26T01:33:57.464+06:00] EVT    sniff_recent_meta -> sniff_recent_meta: {"returned_frames":0,"stored_frames":0}
+[2026-04-26T01:33:58.088+06:00] DEVICE command_received -> Устройство получило USB-команду: mdb_clear_session
+[2026-04-26T01:33:58.096+06:00] EVT    session_cleared -> Локальная MDB-сессия очищена
+[2026-04-26T01:33:58.121+06:00] EVT    cashless_runtime_state_cleared -> cashless_runtime_state_cleared: {"expected_next_rx_kind":"POLL","expected_next_tx_kind":"just_reset_status","just_reset_pending":true,"protocol_state_was_dirty":false,"reader_state":"UNINITIALIZED"}
+[2026-04-26T01:33:58.148+06:00] EVT    state_changed -> Бизнес-состояние изменилось: state=ready_no_funds, coin_pending=0, coin_awaiting_vmc=0
+Attempt outcome: expired_without_vmc_acceptance
+  Sniff recent:
+    meta={"returned_frames":0,"stored_frames":0}
+    no sniff frames captured

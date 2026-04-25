@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <esp_system.h>
 
+#include "device_config.h"
+
 #define MDB_RX_ONLY_SNIFFER 0
 
 #if MDB_RX_ONLY_SNIFFER
@@ -20,7 +22,7 @@
 
 namespace {
 #if MDB_RX_ONLY_SNIFFER
-MdbBitBangReceiver mdbRx(GPIO_NUM_14);
+MdbBitBangReceiver mdbRx(static_cast<gpio_num_t>(MDB_RX_PIN));
 #else
 // Глобальные экземпляры сервисов, живущие весь срок работы устройства.
 PulseService pulseService;
@@ -257,7 +259,8 @@ void setup() {
   delay(200);
   Serial.println();
   Serial.println("MDB bit-bang RX-only sniffer");
-  Serial.println("GPIO14, 9600 baud, non-inverted test, 8 data + mode + stop");
+  Serial.println(String("GPIO") + MDB_RX_PIN +
+                 ", 9600 baud, non-inverted test, 8 data + mode + stop");
   Serial.println("Lines: [MDB_DIAG] counters, [MDB] decoded VMC frames");
   mdbRx.begin(false, 9600);
 #else

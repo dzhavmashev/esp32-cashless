@@ -7,6 +7,8 @@
 #include <freertos/task.h>
 
 #include "machine_protocol.h"
+#include "mdb_config.h"
+
 
 // Низкоуровневый драйвер линии обмена с кофемашиной.
 class MachinePhy {
@@ -157,8 +159,10 @@ class MachinePhy {
   // Копирует последние GPIO-фронты на RX-пине.
   size_t copyRecentRxInterrupts(unsigned long* tsUsOut, uint8_t* levelOut,
                                 size_t maxCount) const;
-  // Отправляет MDB peripheral->master блок: данные с 9-м битом = 0 и
-  // завершающий байт блока с 9-м битом = 1.
+  // Отправляет MDB peripheral->master блок.
+  // Для cashless slave все байты ответа должны уходить как data bytes
+  // с 9-м битом = 0. Если нужен специальный одиночный байт с явным
+  // значением 9-го бита, используй writeSingleByte().
   unsigned long write(const uint8_t* data, size_t length);
   // Отправляет один MDB slave-байт с явным значением 9-го бита.
   unsigned long writeSingleByte(uint8_t value, bool ninthBit);

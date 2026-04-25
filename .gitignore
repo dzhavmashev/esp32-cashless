@@ -9,3 +9,15 @@
 mdb_tx_fix_patch.diff
 
 mdb_setup_response_retry_patch.diff
+
+mdb_setup_rejection_audit_patch_fixed.diff
+
+mdb_flow_ack_guard_patch.diff
+
+mdb_disable_alt2_profile_patch.diff
+
+mdb_startup_first_setup_snapshot_patch_clean.diff
+
+mdb_force_standard_profile_globals_patch.diff
+
+apply_force_standard_profile_fix.py

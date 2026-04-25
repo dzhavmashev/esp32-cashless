@@ -78,12 +78,13 @@ void UartService::deactivate() {
 esp_err_t UartService::debug_force_raw_sniffer() {
   deactivate();
 
-  gpio_reset_pin(GPIO_NUM_14);
-  esp_rom_gpio_pad_select_gpio(GPIO_NUM_14);
-  PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[GPIO_NUM_14], PIN_FUNC_GPIO);
+  const gpio_num_t rxPin = static_cast<gpio_num_t>(MDB_RX_PIN);
+  gpio_reset_pin(rxPin);
+  esp_rom_gpio_pad_select_gpio(rxPin);
+  PIN_FUNC_SELECT(GPIO_PIN_MUX_REG[MDB_RX_PIN], PIN_FUNC_GPIO);
 
   gpio_config_t config = {};
-  config.pin_bit_mask = (1ULL << GPIO_NUM_14);
+  config.pin_bit_mask = (1ULL << MDB_RX_PIN);
   config.mode = GPIO_MODE_INPUT;
   config.pull_up_en = GPIO_PULLUP_ENABLE;
   config.pull_down_en = GPIO_PULLDOWN_DISABLE;
@@ -98,9 +99,9 @@ esp_err_t UartService::debug_force_raw_sniffer() {
     return err;
   }
 
-  gpio_isr_handler_remove(GPIO_NUM_14);
+  gpio_isr_handler_remove(rxPin);
   gRawSnifferEdgeCount = 0;
-  return gpio_isr_handler_add(GPIO_NUM_14, &rawSnifferIsrThunk, nullptr);
+  return gpio_isr_handler_add(rxPin, &rawSnifferIsrThunk, nullptr);
 }
 
 // Обслуживает приём кадров и отложенную отправку PAY-команды.
