@@ -21,3 +21,5 @@ mdb_startup_first_setup_snapshot_patch_clean.diff
 mdb_force_standard_profile_globals_patch.diff
 
 apply_force_standard_profile_fix.py
+
+apply_auth_tx_frame_logger_patch.py

@@ -2710,6 +2710,10 @@ void MdbService::emitAcceptedRxFrameTrace(const machine::Frame& frame,
                 ",\"frame_hex\":\"" + lastAcceptedRxFrame_.hex +
                 "\",\"decoded_kind\":\"" + dialogueKindLabel(kind) +
                 "\",\"checksum_valid\":" + boolToJson(frame.checksumValid) +
+                ",\"standard_mdb_valid\":" +
+                boolToJson(frame.standardMdbValid) +
+                ",\"compat_candidate\":" +
+                boolToJson(frame.compatCandidate) +
                 ",\"address_alias_matched\":" +
                 boolToJson(addressAliasMatched) +
                 ",\"candidate_address\":" +
@@ -4481,6 +4485,10 @@ void MdbService::update() {
                     boolToJson(frame.relaxedDecodeUsed) +
                     ",\"single_byte_command\":" +
                     boolToJson(frame.singleByteCommand) +
+                    ",\"standard_mdb_valid\":" +
+                    boolToJson(frame.standardMdbValid) +
+                    ",\"compat_candidate\":" +
+                    boolToJson(frame.compatCandidate) +
                     ",\"continuation_attempted\":" +
                     boolToJson(frame.continuationAttempted) +
                     ",\"continuation_wait_started_ms\":" +

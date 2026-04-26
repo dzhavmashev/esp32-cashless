@@ -34,6 +34,7 @@ class MdbBitBangReceiver {
   uint32_t invalidBitTimes() const;
   uint32_t decodedWords() const;
   uint32_t frames() const;
+  uint32_t queueOverflows() const;
   int physicalLevel() const;
   int logicalLevel() const;
 

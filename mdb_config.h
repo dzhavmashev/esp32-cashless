@@ -27,7 +27,7 @@ constexpr bool kMdbCoinChangerEnabled = true;
 // Важно: здесь храним именно числовой MDB-address после `command_byte >> 3`,
 // а не сырое значение первого байта кадра.
 constexpr uint8_t kMdbCashlessAddress = 2;
-constexpr uint8_t kMdbCoinChangerAddress = 1;
+constexpr uint8_t kMdbCoinChangerAddress = 0x08;
 
 // Таймаут удержания queued-платежа до первого POLL от VMC.
 constexpr unsigned long kMdbCoinChangerPaymentTimeoutMs = 60000UL;
