@@ -12,15 +12,18 @@
 
 static constexpr uint8_t MDB_TEST_TX_PIN = MDB_TX_PIN;
 
-// Для типичной схемы через транзистор:
 // GPIO LOW  = линия отпущена / MDB logical HIGH
 // GPIO HIGH = линия притянута вниз / MDB logical LOW
 // Если VMC не реагирует на ответы, первым делом попробуй поменять true -> false.
 static constexpr bool MDB_TX_GPIO_HIGH_ASSERTS_LOW = true;
-static constexpr uint32_t MDB_BIT_US = 104;
+static constexpr uint32_t MDB_BIT_US = 92;
 static constexpr uint32_t MDB_INTER_BYTE_GAP_US = 0;
 static constexpr size_t MDB_TEST_MAX_TX_BYTES = 40;
 static constexpr bool MDB_SLAVE_DATA_CHECKSUM_MODE_BIT = true;
+// A/B switch for POLL->JUST_RESET response.
+// true  => single byte: 0B raw9=10B
+// false => data block: 0B 0B raw9=0B 10B
+static constexpr bool MDB_JUST_RESET_SINGLE_BYTE = true;
 
 // HOT PATH NOTE:
 // Any Serial.print() inside handleMdbFrame() can delay processing of the next MDB
@@ -39,7 +42,7 @@ static constexpr bool MDB_LOG_BAD_CHECKSUM = false;
 static constexpr bool MDB_LOG_PERIODIC_SUMMARY = true;
 static constexpr uint32_t MDB_SUMMARY_PERIOD_MS = 2000;
 static constexpr uint32_t MDB_SUMMARY_IDLE_GUARD_US = 2000000;
-static constexpr bool MDB_ALLOW_POLL_BOOTSTRAP_JUST_RESET = false;
+static constexpr bool MDB_ALLOW_POLL_BOOTSTRAP_JUST_RESET = true;
 
 // Still collect timing internally; do not print it in the hot path.
 static uint32_t currentRxFrameEndedAtUs = 0;
@@ -55,12 +58,15 @@ static uint32_t statCoinPoll = 0;
 static uint32_t statCoinSetup = 0;
 static uint32_t statCoinTubeStatus = 0;
 static uint32_t statCoinType = 0;
+static uint32_t statCoinExpansion = 0;
+static uint32_t statTxAck = 0;
 static uint32_t statTxResetAck = 0;
 static uint32_t statTxJustReset = 0;
 static uint32_t statTxSetup = 0;
 static uint32_t statTxTubeStatus = 0;
 static uint32_t statTxCoinTypeAck = 0;
 static uint32_t statTxCredit100 = 0;
+static uint32_t statTxExpansion = 0;
 static uint32_t lastSummaryAtMs = 0;
 
 static bool coinResetSeen = false;
@@ -107,6 +113,8 @@ enum class LastCoinTxKind
   JustReset,
   Setup,
   TubeStatus,
+  CoinTypeAck,
+  ExpansionId,
   Credit100Minor,
 };
 
@@ -224,6 +232,11 @@ static void sendPreparedMdbFrameRaw(const uint8_t *bytes, const bool *modeBits,
 
   if (reason != nullptr)
   {
+    if (length == 1 && bytes[0] == 0x00)
+    {
+      statTxAck++;
+    }
+
     if (strcmp(reason, "coin_reset_ack") == 0)
     {
       statTxResetAck++;
@@ -247,6 +260,10 @@ static void sendPreparedMdbFrameRaw(const uint8_t *bytes, const bool *modeBits,
     else if (strcmp(reason, "coin_credit_100_minor_once") == 0)
     {
       statTxCredit100++;
+    }
+    else if (strcmp(reason, "coin_expansion_id") == 0)
+    {
+      statTxExpansion++;
     }
   }
 
@@ -348,6 +365,11 @@ static const char *authStepFromTxReason(const char *reason)
   if (authReasonContains(reason, "coin_type"))
   {
     return "COIN_TYPE";
+  }
+
+  if (authReasonContains(reason, "coin_expansion"))
+  {
+    return "EXPANSION_ID";
   }
 
   if (authReasonContains(reason, "coin_credit"))
@@ -492,7 +514,14 @@ static void sendMdbAckRaw(const char *reason)
   const uint8_t bytes[] = {0x00};
   const bool modeBits[] = {true}; // raw9=100
 
-  lastCoinTxKind = LastCoinTxKind::Ack;
+  if (reason != nullptr && strcmp(reason, "coin_type_ack") == 0)
+  {
+    lastCoinTxKind = LastCoinTxKind::CoinTypeAck;
+  }
+  else
+  {
+    lastCoinTxKind = LastCoinTxKind::Ack;
+  }
 
   sendPreparedMdbFrameRaw(bytes, modeBits, 1, reason, true);
   logTxPrepared(reason, bytes, modeBits, 1);
@@ -567,21 +596,34 @@ static void sendLastTxAgainRaw(const char *reason)
 
 static void sendCoinJustResetRaw()
 {
-  // Coin changer POLL response: status "Changer was Reset" = 0x0B.
-  //
-  // VMC -> 0B 0B
-  // Coin -> 0B 0B
-  //
-  // raw9:
-  //   data     0x0B mode=0
-  //   checksum 0x0B mode=1
-  //
-  // Expected log:
-  //   hex  = 0B 0B
-  //   raw9 = 0B 10B
-  const uint8_t payload[] = {0x0B};
+  if (MDB_JUST_RESET_SINGLE_BYTE)
+  {
+    // A/B diagnostic variant:
+    // VMC -> POLL 0B 0B
+    // Coin -> JUST RESET 0B
+    //
+    // Expected:
+    //   hex  = 0B
+    //   raw9 = 10B
+    const uint8_t bytes[] = {0x0B};
+    const bool modeBits[] = {true};
 
-  sendMdbDataBlockRaw(payload, sizeof(payload), "coin_just_reset");
+    sendPreparedMdbFrameRaw(bytes, modeBits, 1, "coin_just_reset", true);
+    logTxPrepared("coin_just_reset", bytes, modeBits, 1);
+  }
+  else
+  {
+    // Standard data-block variant:
+    // VMC -> POLL 0B 0B
+    // Coin -> 0B 0B
+    //
+    // Expected:
+    //   hex  = 0B 0B
+    //   raw9 = 0B 10B
+    const uint8_t payload[] = {0x0B};
+    sendMdbDataBlockRaw(payload, sizeof(payload), "coin_just_reset");
+  }
+
   lastCoinTxKind = LastCoinTxKind::JustReset;
 }
 
@@ -672,6 +714,49 @@ static void sendCoinTubeStatusNoTubesRaw()
   sendMdbDataBlockRaw(payload, sizeof(payload), "coin_tube_status_no_tubes");
   lastCoinTxKind = LastCoinTxKind::TubeStatus;
 }
+static void sendCoinExpansionIdRaw()
+{
+  // Coin changer EXPANSION IDENTIFICATION response.
+  // Separate from SETUP. SETUP remains the 23-byte coin config block.
+  static const uint8_t payload[] = {
+      'M',
+      'E',
+      'I',
+      '3',
+      '7',
+      '6',
+      '9',
+      'G',
+      '6',
+      '0',
+      '0',
+      '3',
+      '5',
+      '1',
+      ' ',
+      'C',
+      'F',
+      '7',
+      '9',
+      '0',
+      '0',
+      'M',
+      'D',
+      'B',
+      ' ',
+      ' ',
+      ' ',
+      0x01,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
+  };
+
+  sendMdbDataBlockRaw(payload, sizeof(payload), "coin_expansion_id");
+  lastCoinTxKind = LastCoinTxKind::ExpansionId;
+}
 
 static void logVmcFrame(const char *label, const MdbFrame &frame,
                         uint8_t addr5, uint8_t cmd3)
@@ -712,6 +797,10 @@ static const char *lastCoinTxKindToAuthStep()
     return "SETUP";
   case LastCoinTxKind::TubeStatus:
     return "TUBE_STATUS";
+  case LastCoinTxKind::CoinTypeAck:
+    return "COIN_TYPE_ACK";
+  case LastCoinTxKind::ExpansionId:
+    return "EXPANSION_ID";
   case LastCoinTxKind::Credit100Minor:
     return "CREDIT_100_MINOR";
   case LastCoinTxKind::None:
@@ -947,6 +1036,8 @@ static void printMdbSummaryIfDue(bool force)
   Serial.print(statCoinTubeStatus);
   Serial.print(",coin_type:");
   Serial.print(statCoinType);
+  Serial.print(",expansion:");
+  Serial.print(statCoinExpansion);
   Serial.print(",ack:");
   Serial.print(statMasterAck);
   Serial.print(",ret:");
@@ -954,7 +1045,9 @@ static void printMdbSummaryIfDue(bool force)
   Serial.print(",nak:");
   Serial.print(statMasterNak);
 
-  Serial.print("} tx={reset_ack:");
+  Serial.print("} tx={ack:");
+  Serial.print(statTxAck);
+  Serial.print(",reset_ack:");
   Serial.print(statTxResetAck);
   Serial.print(",just_reset:");
   Serial.print(statTxJustReset);
@@ -964,6 +1057,8 @@ static void printMdbSummaryIfDue(bool force)
   Serial.print(statTxTubeStatus);
   Serial.print(",coin_type_ack:");
   Serial.print(statTxCoinTypeAck);
+  Serial.print(",expansion:");
+  Serial.print(statTxExpansion);
   Serial.print(",credit100:");
   Serial.print(statTxCredit100);
 
@@ -1037,6 +1132,14 @@ void handleMdbFrame(const MdbFrame &frame)
       coinTubeStatusAccepted = true;
       logAuthStep("TUBE_STATUS", "ok", "master_ack_00");
       armCredit100MinorIfReady("tube_status_ack");
+    }
+    else if (lastCoinTxKind == LastCoinTxKind::CoinTypeAck)
+    {
+      logAuthStep("COIN_TYPE", "ok", "master_ack_after_coin_type_ack");
+    }
+    else if (lastCoinTxKind == LastCoinTxKind::ExpansionId)
+    {
+      logAuthStep("EXPANSION_ID", "ok", "master_ack_00");
     }
     else if (lastCoinTxKind == LastCoinTxKind::Credit100Minor)
     {
@@ -1231,19 +1334,12 @@ void handleMdbFrame(const MdbFrame &frame)
 
     if (coinJustResetPending)
     {
-      if (!coinJustResetSent)
-      {
-        // MDB coin changer should report JUST RESET on the first POLL only.
-        // If VMC needs a repeat, it must send RET/NAK and we retransmit there.
-        sendCoinJustResetRaw();
-        coinJustResetSent = true;
-        logAuthStep("JUST_RESET", "pending", "sent_status_0B_waiting_ack_or_setup");
-        logVmcFrame("coin_poll_just_reset_pending", frame, addr5, cmd3);
-        return;
-      }
-
-      sendMdbAckRaw("coin_ack_waiting_after_just_reset");
-      logVmcFrame("coin_poll_waiting_after_just_reset", frame, addr5, cmd3);
+      // Repeat JUST_RESET on every POLL until VMC ACKs it or moves to SETUP.
+      // Do not switch to ACK here: ACK means "no event" and can hide reset.
+      sendCoinJustResetRaw();
+      coinJustResetSent = true;
+      logAuthStep("JUST_RESET", "pending", "sent_status_0B_waiting_ack_or_setup");
+      logVmcFrame("coin_poll_just_reset_pending", frame, addr5, cmd3);
       return;
     }
 
@@ -1309,6 +1405,10 @@ void handleMdbFrame(const MdbFrame &frame)
 
     // MDB timing first: ACK immediately, log after TX.
     sendMdbAckRaw("coin_type_ack");
+
+    // Authorization point for this diagnostic flow:
+    // VMC sent COIN TYPE and ESP accepted it with ACK.
+    coinAuthorizedInVmc = true;
 
     if (tubeStatusInferredByCoinType)
     {
@@ -1597,11 +1697,16 @@ void setup()
   Serial.println("HOT PATH logs disabled: TX_TIMING=off, TX_FRAME=off, AUTH=off, VMC_RX=off");
   Serial.println("Periodic summary enabled: [MDB_SUMMARY] every 2s");
   Serial.println("TX 9-bit format: ACK mode=1; data bytes mode=0; checksum/final byte mode=1");
+  Serial.println(MDB_JUST_RESET_SINGLE_BYTE
+                     ? "JUST_RESET variant: repeat single-byte 0B raw9=10B"
+                     : "JUST_RESET variant: repeat data-block 0B 0B raw9=0B 10B");
   Serial.print("TX bit_us=");
   Serial.println(MDB_BIT_US);
   Serial.print("TX checksum_mode_bit=");
   Serial.println(MDB_SLAVE_DATA_CHECKSUM_MODE_BIT ? "true" : "false");
-  Serial.println("Coin profile: feature=01 currency=14 17 scale=64 decimals=02 routing=0000 credits=1,5,10,50,100");
+  Serial.println("Coin SETUP profile: feature=01 currency=14 17 scale=64 decimals=02 routing=0000 credits=1,5,10,50,100");
+  Serial.println("Coin EXPANSION ID: MEI / 3769G600351 / CF7900MDB");
+  Serial.println("Authorization point: COIN TYPE 0C -> ACK");
   Serial.println("Auth log format: [AUTH] SETUP - ok/fail/pending ...");
   Serial.println("RX-only commands: help, tx_line_test, summary_now");
 

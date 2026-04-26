@@ -189,9 +189,9 @@ constexpr unsigned long kSetupResponseAckTimeoutMs = 250UL;
 constexpr unsigned long kBeginSessionAckTimeoutMs = 1000UL;
 constexpr bool kForceTestResponseOnAnyValidRx = false;
 constexpr uint8_t kForcedTestResponseByte = 0x00;
-constexpr bool kLogEveryPoll = true;
-constexpr bool kLogEveryStateTransition = true;
-constexpr bool kLogEveryResponseDecision = true;
+constexpr bool kLogEveryPoll = false;
+constexpr bool kLogEveryStateTransition = false;
+constexpr bool kLogEveryResponseDecision = false;
 constexpr bool kLogGatewaySetupCompatTrace = false;
 constexpr bool kEmitVerbosePhyRuntimeEvents = false;
 constexpr bool kEmitVerbosePhyDecoderEvents = false;
@@ -7957,6 +7957,10 @@ bool MdbService::handleCoinChangerCommand(const machine::Frame& frame,
         stateDirty_ = true;
       }
       sendAckRaw("coin_type_ack");
+      emitEvent("coin_authorized_in_vmc",
+                String("{\"timestamp_us\":") + frame.endedAtUs +
+                    ",\"basis\":\"coin_type_ack_sent\",\"fast_path\":" +
+                    boolToJson(fastPath) + "}");
       emitEvent("coin_type_configured",
                 String("{\"timestamp_us\":") + frame.endedAtUs +
                     ",\"fast_path\":" + boolToJson(fastPath) +
