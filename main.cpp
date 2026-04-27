@@ -1614,6 +1614,51 @@ namespace
       return;
     }
 
+    if (command == "gpio19_hold_high")
+    {
+      const uint32_t holdMs = arg.isEmpty() ? 5000UL : static_cast<uint32_t>(arg.toInt());
+      const gpio_num_t txPin = static_cast<gpio_num_t>(MDB_TX_PIN);
+
+      Serial.print("[GPIO19_TEST] set HIGH for ms=");
+      Serial.println(holdMs);
+
+      gpio_set_direction(txPin, GPIO_MODE_OUTPUT);
+      gpio_set_level(txPin, 1);
+
+      const uint32_t started = millis();
+      while (millis() - started < holdMs)
+      {
+        Serial.print("[GPIO19_TEST] gpio19=");
+        Serial.println(gpio_get_level(txPin));
+        delay(250);
+      }
+
+      gpio_set_level(txPin, 0);
+      Serial.print("[GPIO19_TEST] released LOW gpio19=");
+      Serial.println(gpio_get_level(txPin));
+      return;
+    }
+
+    if (command == "gpio19_set_low")
+    {
+      const gpio_num_t txPin = static_cast<gpio_num_t>(MDB_TX_PIN);
+      gpio_set_direction(txPin, GPIO_MODE_OUTPUT);
+      gpio_set_level(txPin, 0);
+      Serial.print("[GPIO19_TEST] forced LOW gpio19=");
+      Serial.println(gpio_get_level(txPin));
+      return;
+    }
+
+    if (command == "gpio19_set_high")
+    {
+      const gpio_num_t txPin = static_cast<gpio_num_t>(MDB_TX_PIN);
+      gpio_set_direction(txPin, GPIO_MODE_OUTPUT);
+      gpio_set_level(txPin, 1);
+      Serial.print("[GPIO19_TEST] forced HIGH gpio19=");
+      Serial.println(gpio_get_level(txPin));
+      return;
+    }
+
     if (command == "mdb_set_cashless_address")
     {
       dispatchSerialCommand(
@@ -1830,6 +1875,6 @@ void loop()
   otaService.update();
   statusLeds.update(connectionService.isWifiConnected(),
                     connectionService.isWebSocketConnected());
-  delay(50);
+  delay(1);
 #endif
 }

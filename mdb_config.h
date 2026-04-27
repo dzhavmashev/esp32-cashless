@@ -27,7 +27,10 @@ constexpr bool kMdbCoinChangerEnabled = true;
 // Важно: здесь храним именно числовой MDB-address после `command_byte >> 3`,
 // а не сырое значение первого байта кадра.
 constexpr uint8_t kMdbCashlessAddress = 2;
-constexpr uint8_t kMdbCoinChangerAddress = 0x08;
+// Coin changer raw command byte is 0x08, but decoded MDB address is 0x08 >> 3 = 0x01.
+// machine::Frame::candidateAddress stores the decoded 5-bit address, not the raw byte.
+constexpr uint8_t kMdbCoinChangerRawCommandBase = 0x08;
+constexpr uint8_t kMdbCoinChangerAddress = 0x01;
 
 // Таймаут удержания queued-платежа до первого POLL от VMC.
 constexpr unsigned long kMdbCoinChangerPaymentTimeoutMs = 60000UL;
@@ -46,3 +49,9 @@ constexpr char kMdbCoinChangerManufacturer[] = "MEI";
 constexpr char kMdbCoinChangerSerial[] = "3769G600351 ";
 constexpr char kMdbCoinChangerModel[] = "CF7900MDB   ";
 constexpr uint32_t kMdbCoinChangerOptionalFeatureBits = 0x00000000UL;
+// Expected lengths for MDB EXPANSION IDENTIFICATION fields.
+// sizeof includes the terminating NUL, hence 4/13/13.
+static_assert(sizeof(kMdbCoinChangerManufacturer) == 4, "MDB coin manufacturer must be 3 chars");
+static_assert(sizeof(kMdbCoinChangerSerial) == 13, "MDB coin serial must be 12 chars");
+static_assert(sizeof(kMdbCoinChangerModel) == 13, "MDB coin model must be 12 chars");
+
