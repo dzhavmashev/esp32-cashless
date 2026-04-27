@@ -4,12 +4,25 @@
 #include <string.h>
 
 #include "device_config.h"
-
-#define MDB_RX_ONLY_SNIFFER 1
+#ifndef MDB_RX_ONLY_SNIFFER
+#define MDB_RX_ONLY_SNIFFER 0
+#endif
 
 #if MDB_RX_ONLY_SNIFFER
 #include "mdb_bitbang_receiver.h"
+#else
+#include "command_service.h"
+#include "connection_service.h"
+#include "firmware_version.h"
+#include "mdb_service.h"
+#include "ota_manager.h"
+#include "pulse_config_service.h"
+#include "pulse_service.h"
+#include "status_leds.h"
+#include "uart_service.h"
+#endif
 
+#if MDB_RX_ONLY_SNIFFER
 static constexpr uint8_t MDB_TEST_TX_PIN = MDB_TX_PIN;
 
 // GPIO LOW  = линия отпущена / MDB logical HIGH
@@ -100,6 +113,8 @@ static size_t rxOnlyConsoleLength = 0;
 // If true, credit can be armed after SETUP + TUBE STATUS.
 // If false, waits for COIN TYPE / enable command too.
 static constexpr bool MDB_ARM_CREDIT_AFTER_TUBE_STATUS = false;
+
+static constexpr bool MDB_RX_PASSIVE_ONLY = true;
 
 static uint8_t lastTxBytes[MDB_TEST_MAX_TX_BYTES] = {};
 static bool lastTxModeBits[MDB_TEST_MAX_TX_BYTES] = {};
@@ -1079,24 +1094,18 @@ static void printMdbSummaryIfDue(bool force)
   Serial.print(lastResponseDelayUs);
   Serial.print(",max_response_us:");
   Serial.print(maxResponseDelayUs);
+
   Serial.println("}");
 }
-#else
-// #include "command_service.h"
-// #include "connection_service.h"
-// #include "firmware_version.h"
-// #include "logging_utils.h"
-// #include "mdb_service.h"
-// #include "ota_manager.h"
-// #include "pulse_config_service.h"
-// #include "pulse_service.h"
-// #include "status_leds.h"
-// #include "uart_service.h"
 #endif
 
 #if MDB_RX_ONLY_SNIFFER
 void handleMdbFrame(const MdbFrame &frame)
 {
+  if (MDB_RX_PASSIVE_ONLY)
+  {
+    return;
+  }
   if (frame.length == 0)
   {
     return;
@@ -1447,6 +1456,57 @@ namespace
   char serialCommandBuffer[kSerialCommandBufferSize] = {};
   size_t serialCommandLength = 0;
 
+  bool gpio14DiagEnabled = true;
+  int gpio14LastLevel = -1;
+  uint32_t gpio14EdgeCount = 0;
+  uint32_t gpio14LowCount = 0;
+  uint32_t gpio14HighCount = 0;
+  uint32_t gpio14LastPrintMs = 0;
+
+  void updateGpio14Diag()
+  {
+    if (!gpio14DiagEnabled)
+    {
+      return;
+    }
+
+    const int level = gpio_get_level(static_cast<gpio_num_t>(MDB_RX_PIN));
+
+    if (level == 0)
+    {
+      gpio14LowCount++;
+    }
+    else
+    {
+      gpio14HighCount++;
+    }
+
+    if (gpio14LastLevel < 0)
+    {
+      gpio14LastLevel = level;
+    }
+    else if (level != gpio14LastLevel)
+    {
+      gpio14EdgeCount++;
+      gpio14LastLevel = level;
+    }
+
+    const uint32_t nowMs = millis();
+    if (nowMs - gpio14LastPrintMs >= 1000)
+    {
+      gpio14LastPrintMs = nowMs;
+
+      Serial.print("[GPIO14_DIAG] level=");
+      Serial.print(level);
+      Serial.print(" edges=");
+      Serial.print(gpio14EdgeCount);
+      Serial.print(" low_samples=");
+      Serial.print(gpio14LowCount);
+      Serial.print(" high_samples=");
+      Serial.println(gpio14HighCount);
+    }
+  }
+
   const char *resetReasonToString(esp_reset_reason_t reason);
   void handleSerialConsole();
   void dispatchSerialConsoleLine(const String &line);
@@ -1709,13 +1769,13 @@ void setup()
   Serial.println("Authorization point: COIN TYPE 0C -> ACK");
   Serial.println("Auth log format: [AUTH] SETUP - ok/fail/pending ...");
   Serial.println("RX-only commands: help, tx_line_test, summary_now");
-  Serial.println("RX polarity: U1 6N137 inverted=true");
+  Serial.println("RX polarity: U1 rewired as pull-down input, inverted=false");
 
   gpio_set_direction(static_cast<gpio_num_t>(MDB_TEST_TX_PIN), GPIO_MODE_OUTPUT);
   releaseMdbTxLine();
   delay(20);
 
-  mdbRx.begin(true, 9600);
+  mdbRx.begin(false, 9600);
 #else
   // Начальная инициализация железа, сервисов и сетевого стека.
   Serial.begin(115200);
@@ -1756,9 +1816,10 @@ void loop()
   handleRxOnlyConsole();
   mdbRx.update();
   printMdbSummaryIfDue();
-  // mdbRx.printDiagnostics();
+  mdbRx.printDiagnostics();
 #else
   // Основной цикл устройства: связь, логика оплаты, OTA и индикация.
+  updateGpio14Diag();
   handleSerialConsole();
   connectionService.update();
   sendDeviceInfoIfNeeded();
