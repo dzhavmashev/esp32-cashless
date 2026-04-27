@@ -1709,12 +1709,13 @@ void setup()
   Serial.println("Authorization point: COIN TYPE 0C -> ACK");
   Serial.println("Auth log format: [AUTH] SETUP - ok/fail/pending ...");
   Serial.println("RX-only commands: help, tx_line_test, summary_now");
+  Serial.println("RX polarity: U1 6N137 inverted=true");
 
   gpio_set_direction(static_cast<gpio_num_t>(MDB_TEST_TX_PIN), GPIO_MODE_OUTPUT);
   releaseMdbTxLine();
   delay(20);
 
-  mdbRx.begin(false, 9600);
+  mdbRx.begin(true, 9600);
 #else
   // Начальная инициализация железа, сервисов и сетевого стека.
   Serial.begin(115200);
