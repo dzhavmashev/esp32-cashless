@@ -1,0 +1,151 @@
+9:E (274) psram: PSRAM ID read error: 0xffffffff
+12:Loaded WiFi configuration
+13:Loaded device configuration: MDB mode, DeviceType: 6
+14:  MDB RX Pin: 26, TX Pin: 27, Periph RX Pin: 13
+15:  MDB Address: 0x10
+16:  MDB Session Timeout: 60 sec
+30:AppController: InputPulseTracker skipped - MDB Cashless mode uses BV sniffing instead
+31:ModemPowerRelay: Initialized on pin 33 (active-high: LOW=ON, modem power ON)
+33:AppController: GPIO 19 set to HIGH (cash acceptor power)
+36:AppController: Connection mode configured, attempting to connect
+39:ConnectionManager: Initialized with mode 1
+49:--- CMD help ---
+51:--- CMD ? ---
+53:--- CMD status ---
+55:--- CMD info ---
+57:--- CMD version ---
+59:--- CMD config ---
+61:--- CMD dump ---
+63:--- CMD mdb ---
+73:--- CMD mdb_status ---
+75:--- CMD mdb_debug ---
+77:--- CMD debug ---
+79:--- CMD pins ---
+81:--- CMD gpio ---
+83:--- CMD get_config ---
+85:--- CMD show_config ---
+95:--- CMD diag ---
+97:--- CMD diagnostics ---
+99:--- CMD state ---
+101:--- CMD mdb_state ---
+103:--- CMD mdb_config ---
+105:--- CMD mdb_summary ---
+107:--- CMD rx_diag ---
+124:--- CMD help ---
+126:--- CMD ? ---
+128:--- CMD status ---
+130:--- CMD info ---
+132:--- CMD version ---
+134:--- CMD config ---
+136:--- CMD dump ---
+138:--- CMD mdb ---
+140:--- CMD mdb_status ---
+142:--- CMD mdb_debug ---
+144:--- CMD debug ---
+146:--- CMD pins ---
+148:--- CMD gpio ---
+150:--- CMD get_config ---
+152:--- CMD show_config ---
+154:--- CMD diag ---
+156:--- CMD diagnostics ---
+158:--- CMD state ---
+160:--- CMD mdb_state ---
+162:--- CMD mdb_config ---
+164:--- CMD mdb_summary ---
+166:--- CMD rx_diag ---
+172:--- CMD help ---
+173:[no response]
+174:--- CMD ? ---
+176:--- CMD status ---
+178:--- CMD info ---
+179:[no response]
+180:--- CMD version ---
+182:--- CMD config ---
+184:--- CMD dump ---
+186:--- CMD mdb ---
+188:--- CMD mdb_status ---
+190:--- CMD mdb_debug ---
+192:--- CMD debug ---
+194:--- CMD pins ---
+195:[no response]
+196:--- CMD gpio ---
+197:[no response]
+198:--- CMD get_config ---
+200:--- CMD show_config ---
+202:--- CMD diag ---
+203:[no response]
+204:--- CMD diagnostics ---
+205:[no response]
+206:--- CMD state ---
+208:--- CMD mdb_state ---
+209:[no response]
+210:--- CMD mdb_config ---
+212:--- CMD mdb_summary ---
+213:[no response]
+214:--- CMD rx_diag ---
+251:--- CMD help ---
+253:--- CMD ? ---
+255:--- CMD status ---
+257:--- CMD info ---
+259:--- CMD version ---
+261:--- CMD config ---
+263:--- CMD dump ---
+265:--- CMD mdb ---
+276:--- CMD mdb_status ---
+278:--- CMD mdb_debug ---
+280:--- CMD debug ---
+282:--- CMD pins ---
+284:--- CMD gpio ---
+286:--- CMD get_config ---
+288:--- CMD show_config ---
+299:--- CMD diag ---
+301:--- CMD diagnostics ---
+303:--- CMD state ---
+305:--- CMD mdb_state ---
+307:--- CMD mdb_config ---
+309:--- CMD mdb_summary ---
+311:--- CMD rx_diag ---
+323:--- CMD help ---
+325:--- CMD ? ---
+327:--- CMD status ---
+329:--- CMD info ---
+331:--- CMD version ---
+333:--- CMD config ---
+335:--- CMD dump ---
+337:--- CMD mdb ---
+339:--- CMD mdb_status ---
+341:--- CMD mdb_debug ---
+343:--- CMD debug ---
+345:--- CMD pins ---
+347:--- CMD gpio ---
+349:--- CMD get_config ---
+351:--- CMD show_config ---
+353:--- CMD diag ---
+355:--- CMD diagnostics ---
+357:--- CMD state ---
+359:--- CMD mdb_state ---
+361:--- CMD mdb_config ---
+363:--- CMD mdb_summary ---
+365:--- CMD rx_diag ---
+371:--- CMD help ---
+373:--- CMD ? ---
+375:--- CMD status ---
+377:--- CMD info ---
+379:--- CMD version ---
+381:--- CMD config ---
+383:--- CMD dump ---
+385:--- CMD mdb ---
+387:--- CMD mdb_status ---
+389:--- CMD mdb_debug ---
+391:--- CMD debug ---
+393:--- CMD pins ---
+395:--- CMD gpio ---
+397:--- CMD get_config ---
+399:--- CMD show_config ---
+401:--- CMD diag ---
+403:--- CMD diagnostics ---
+405:--- CMD state ---
+407:--- CMD mdb_state ---
+409:--- CMD mdb_config ---
+411:--- CMD mdb_summary ---
+413:--- CMD rx_diag ---

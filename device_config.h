@@ -27,7 +27,7 @@ constexpr int MDB_RX_PIN = 14;
 constexpr int MDB_TX_PIN = 19;
 constexpr unsigned long MDB_BAUD_RATE = 9600;
 constexpr unsigned long MDB_FRAME_GAP_MS = 20;
-constexpr bool MDB_RX_INVERT = false;
+constexpr bool MDB_RX_INVERT = true;
 constexpr bool MDB_TX_INVERT = true;
 constexpr unsigned long UART_BAUD_RATE = 9600;
 constexpr unsigned long UART_FRAME_GAP_MS = 20;
@@ -47,3 +47,13 @@ constexpr unsigned long COIN_MINOR_UNITS_PER_PULSE_DEFAULT =
 constexpr unsigned long PULSE_CONFIG_REFRESH_INTERVAL_MS = 5000;
 constexpr unsigned long LED_ON_TIME_MS = 3000;
 constexpr unsigned long REQUEST_INTERVAL_MS = 3000;
+
+// Cash acceptor / MDB peripheral control output.
+// This is NOT MDB TX/RX and NOT a relay-specific feature.
+// Use it to drive an optocoupler LED input or a transistor base/gate.
+// MDB_RX_PIN and MDB_TX_PIN are intentionally left unchanged.
+constexpr int CASH_ACCEPTOR_CTRL_GPIO = 33;
+constexpr bool CASH_ACCEPTOR_CTRL_ENABLED = true;
+constexpr bool CASH_ACCEPTOR_CTRL_ACTIVE_HIGH = true;
+constexpr uint32_t CASH_ACCEPTOR_CTRL_BOOT_SETTLE_MS = 1500;
+

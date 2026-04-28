@@ -1,160 +1,215 @@
 ==================== SCHEME2 MONTAGE MAP ====================
 
-Short purpose:
-- монтажная карта для гибридной схемы ESP32 <-> MDB
-- MDB UART переведен на 6N137
-- pulse-линии оставлены на старых PC817 без изменений
-- без общей земли между ESP32 и кофемашиной
+Монтажная карта для схемы ESP32 <-> MDB (scheme2):
+- MDB UART-мост на 6N137 (гальваническая развязка)
+- pulse-выходы через PC817
+- GND_ESP32 и MACHINE_GND никогда не соединяются
 
 
 ==================== POWER DOMAINS ====================
 
 ESP32 domain:
-- +5V_ESP
-- +3V3_ESP
-- GND_ESP32
+  +5V_ESP    — от USB или внешнего регулятора
+  +3V3_ESP   — от встроенного регулятора ESP32
+  GND_ESP32  — общий минус ESP32-стороны
 
 Machine isolated domain:
-- +5V_ISO
-- MACHINE_GND
+  +5V_ISO    — нужен для U2 (MDB TX): pin7 и pin8
+               Источник: шаговый регулятор от +VDC машины (~34V)
+               ИЛИ отдельный изолированный DC-DC модуль
+  MACHINE_GND — GND машины (= MDB pin6 GND)
 
 CRITICAL:
-- GND_ESP32 and MACHINE_GND must NEVER be connected
-- +5V_ISO нужен для U2 MDB TX
-- U3/U4 pulse-часть не требует отдельного питания +5V_ISO
+  GND_ESP32 и MACHINE_GND НИКОГДА не соединять.
+  Нарушение изоляции = повреждение ESP32 или VMC.
 
 
 ==================== PARTS ====================
 
-U1 = 6N137 = MDB RX
-U2 = 6N137 = MDB TX
-U3 = PC817 = BILL PULSE
-U4 = PC817 = COIN PULSE
+U1 = 6N137 = MDB RX  (Machine TXD → GPIO14)
+U2 = 6N137 = MDB TX  (GPIO19 → Machine RXD)
+U3 = PC817 = BILL PULSE  (GPIO32 → machine bill input)
+U4 = PC817 = COIN PULSE  (GPIO33 → machine coin input)
 
-R1 = 470 ohm  for U1 LED input
-R2 = 220 ohm  for U2 LED input
-R3 = 220 ohm  for U3 LED input
-R4 = 220 ohm  for U4 LED input
-R5 = 4.7k     pull-up for GPIO14 to +3V3_ESP
+R1 = зависит от напряжения MDB TXD (pin2, VMC → периферия):
+     Измерьте напряжение мультиметром до пайки:
+       5V MDB  →  R1 = 470 Ом   (IF ≈ 7 мА)   ← стандартный случай
+      12V MDB  →  R1 = 1 кОм    (IF ≈ 11 мА)
+      24V MDB  →  R1 = 2.2 кОм  (IF ≈ 10 мА)
+     При 24V с R1=470 Ом ток ≈ 48 мА — сожжёт 6N137!
 
-C1 = 100nF for U1 between pin8 and pin5
-C2 = 100nF for U2 between pin8 and pin5
+R2 = 220 Ом  — GPIO19 → U2 pin2 (ток LED)
+R3 = 220 Ом  — GPIO32 → U3 pin1 (ток LED)
+R4 = 220 Ом  — GPIO33 → U4 pin1 (ток LED)
+R5 = 4.7 кОм — pull-up: +3V3_ESP → GPIO14 (U1 open-collector output)
+
+C1 = 100 нФ — bypass: U1 pin8 и pin5 (между VCC и GND, ESP32 side)
+C2 = 100 нФ — bypass: U2 pin8 и pin5 (между VCC и GND, Machine side)
 
 
 ==================== 6N137 PINOUT ====================
 
         ________
- NC  1 |      | 8  VCC
- AN  2 |      | 7  ENABLE
- CA  3 |      | 6  OUTPUT
- NC  4 |______| 5  GND
+ NC  1 |        | 8  VCC
+ AN  2 |        | 7  ENABLE
+ CA  3 |        | 6  OUTPUT (open-collector)
+ NC  4 |________| 5  GND
+
+Примечание: pin1 и pin4 остаются неподключёнными.
+pin7 (ENABLE) должен быть подтянут к VCC — без него выход заблокирован.
 
 
 ==================== PC817 PINOUT ====================
 
         ________
- AN  1 |      | 4  COLLECTOR
- CA  2 |      | 3  EMITTER
-       |______|
+ AN  1 |        | 4  COLLECTOR (open-collector)
+ CA  2 |        | 3  EMITTER
+        ________
 
 
-==================== U1 MDB RX (MACHINE -> ESP32) ====================
+==================== U1 MDB RX (Machine TXD → GPIO14) ====================
 
-Machine side:
-- MDB pin2 TXD -> R1 470 ohm -> U1 pin2
-- MACHINE_GND -> U1 pin3
+Назначение:
+  Принимает MDB сигнал от VMC (TXD машины) и передаёт его
+  на GPIO14 ESP32 с полной гальванической развязкой.
+  6N137 инвертирует сигнал: MDB HIGH (idle) → GPIO14 LOW.
+  Firmware компенсирует инверсию: MDB_RX_INVERT = true.
 
-ESP32 side:
-- GND_ESP32 -> U1 pin5
-- GPIO14 -> U1 pin6
-- +5V_ESP -> U1 pin7
-- +5V_ESP -> U1 pin8
-- +3V3_ESP -> R5 4.7k -> GPIO14
-- C1 100nF between U1 pin8 and U1 pin5
+Input side (Machine domain):
+  MDB pin2 TXD → R1 → U1 pin2 (AN)
+  MDB pin6 GND (MACHINE_GND) → U1 pin3 (CA)
 
-Unused:
-- U1 pin1 NC
-- U1 pin4 NC
+Output side (ESP32 domain):
+  +5V_ESP   → U1 pin8 (VCC)
+  +5V_ESP   → U1 pin7 (ENABLE)
+  GND_ESP32 → U1 pin5 (GND)
+  U1 pin6 (OUTPUT) → GPIO14
+  +3V3_ESP  → R5 (4.7 кОм) → GPIO14   ← pull-up к выходу U1
+  C1 (100 нФ) между U1 pin8 и U1 pin5
 
+Пины без подключения:
+  U1 pin1 NC
+  U1 pin4 NC
 
-==================== U2 MDB TX (ESP32 -> MACHINE) ====================
-
-ESP32 side:
-- GPIO19 -> R2 220 ohm -> U2 pin2
-- GND_ESP32 -> U2 pin3
-
-Machine side:
-- MACHINE_GND -> U2 pin5
-- MDB pin1 RXD -> U2 pin6
-- +5V_ISO -> U2 pin7
-- +5V_ISO -> U2 pin8
-- C2 100nF between U2 pin8 and U2 pin5
-
-Optional pull-up:
-- if MDB pin1 RXD has no internal pull-up:
-  +5V_ISO -> 4.7k -> MDB pin1 RXD
-
-Unused:
-- U2 pin1 NC
-- U2 pin4 NC
+Логика в idle (VMC не отправляет):
+  MDB TXD = 5V (HIGH) → LED U1 включён → выход LOW → GPIO14 = LOW
 
 
-==================== U3 BILL PULSE (ESP32 -> MACHINE) ====================
+==================== U2 MDB TX (GPIO19 → Machine RXD) ====================
 
-ESP32 side:
-- GPIO32 -> R3 220 ohm -> U3 pin1
-- GND_ESP32 -> U3 pin2
+Назначение:
+  ESP32 передаёт MDB-ответы через U2 на шину VMC (RXD машины).
+  Open-collector выход U2 тянет MDB RXD к MACHINE_GND.
+  GPIO19 HIGH → LED U2 включён → выход LOW → MDB RXD = LOW.
+  Firmware: MDB_TX_INVERT = true.
 
-Machine side:
-- MACHINE_GND -> U3 pin3
-- BILL_ACCEPTOR_PULSE_IN -> U3 pin4
+Input side (ESP32 domain):
+  GPIO19 → R2 (220 Ом) → U2 pin2 (AN)
+  GND_ESP32 → U2 pin3 (CA)
 
-Legacy note:
-- этот узел оставлен как в старой схеме
-- дополнительное питание на U3 не подается
+Output side (Machine domain):
+  +5V_ISO   → U2 pin8 (VCC)
+  +5V_ISO   → U2 pin7 (ENABLE)
+  MACHINE_GND → U2 pin5 (GND)
+  U2 pin6 (OUTPUT) → MDB pin1 RXD
+  C2 (100 нФ) между U2 pin8 и U2 pin5
+
+Опциональный pull-up на машинной стороне:
+  Если VMC не имеет внутреннего pull-up на RXD:
+    +5V_ISO → 4.7 кОм → MDB pin1 RXD
+  (обычно pull-up уже встроен в VMC)
+
+Пины без подключения:
+  U2 pin1 NC
+  U2 pin4 NC
+
+Источник +5V_ISO:
+  Вариант A: шаговый DC-DC (LM2596, MP2307 и т.п.) от +VDC машины (~34V)
+  Вариант B: изолированный DC-DC модуль (например, B0505S)
 
 
-==================== U4 COIN PULSE (ESP32 -> MACHINE) ====================
+==================== U3 BILL PULSE (GPIO32 → Machine BILL input) ====================
 
-ESP32 side:
-- GPIO33 -> R4 220 ohm -> U4 pin1
-- GND_ESP32 -> U4 pin2
+Назначение:
+  Формирует импульс на входе купюроприёмника машины.
+  GPIO32 HIGH → LED PC817 включён → коллектор к MACHINE_GND подтягивается LOW.
+  Машина интерпретирует LOW-импульс как сигнал о купюре.
 
-Machine side:
-- MACHINE_GND -> U4 pin3
-- COIN_ACCEPTOR_PULSE_IN -> U4 pin4
+Input side (ESP32 domain):
+  GPIO32 → R3 (220 Ом) → U3 pin1 (AN)
+  GND_ESP32 → U3 pin2 (CA)
 
-Legacy note:
-- этот узел оставлен как в старой схеме
-- дополнительное питание на U4 не подается
+Output side (Machine domain):
+  MACHINE_GND → U3 pin3 (EMITTER)
+  U3 pin4 (COLLECTOR) → BILL_ACCEPTOR_PULSE_IN (машина)
+
+Firmware:
+  BILL_PULSE_OUTPUT_PIN = 32
+  BILL_PULSE_ON_TIME_MS_DEFAULT = 100
+  BILL_PULSE_OFF_TIME_MS_DEFAULT = 100
+  BILL_MINOR_UNITS_PER_PULSE_DEFAULT = 1000
+
+
+==================== U4 COIN PULSE (GPIO33 → Machine COIN input) ====================
+
+Назначение:
+  Формирует импульс на входе монетоприёмника машины.
+  GPIO33 HIGH → LED PC817 включён → коллектор к MACHINE_GND подтягивается LOW.
+  Машина интерпретирует LOW-импульс как монету.
+
+Input side (ESP32 domain):
+  GPIO33 → R4 (220 Ом) → U4 pin1 (AN)
+  GND_ESP32 → U4 pin2 (CA)
+
+Output side (Machine domain):
+  MACHINE_GND → U4 pin3 (EMITTER)
+  U4 pin4 (COLLECTOR) → COIN_ACCEPTOR_PULSE_IN (машина)
+
+Firmware:
+  COIN_PULSE_OUTPUT_PIN = 33
+  COIN_PULSE_ON_TIME_MS_DEFAULT = 100
+  COIN_PULSE_OFF_TIME_MS_DEFAULT = 100
+  COIN_MINOR_UNITS_PER_PULSE_DEFAULT = 100
+
+GPIO33 dual-role:
+  В firmware GPIO33 назначен двум константам одновременно:
+    COIN_PULSE_OUTPUT_PIN = 33   (pulse_service, нормальный режим)
+    CASH_ACCEPTOR_CTRL_GPIO = 33 (только в sniffer-режиме)
+  Физически это один GPIO и одна оптопара U4.
+  В нормальном режиме cashAcceptorCtrlInit() НЕ вызывается —
+  GPIO33 эксклюзивно под управлением pulse_service.
 
 
 ==================== BEHAVIOR ====================
 
-Idle state:
-- MDB pin1 RXD = HIGH
-- MDB pin2 TXD = HIGH
-- BILL_ACCEPTOR_PULSE_IN = HIGH
-- COIN_ACCEPTOR_PULSE_IN = HIGH
+MDB idle:
+  MDB pin1 RXD = HIGH  (pull-up в VMC; U2 не тянет)
+  MDB pin2 TXD = HIGH  (VMC держит HIGH между фреймами)
 
-Inversion:
-- U1 inverts machine TXD before GPIO14
-- U2 works as open-collector output on machine side
-- U3/U4 remain old open-collector pulse outputs through PC817
+MDB сигнал:
+  VMC опрашивает шину каждые ~10 мс (POLL)
+  При передаче: TXD уходит LOW → GPIO14 = HIGH (U1 инвертирует)
+  При ответе ESP32: GPIO19 → R2 → U2 → MDB RXD = LOW
 
-Practical meaning:
-- GPIO19 HIGH -> MDB pin1 RXD pulled LOW
-- GPIO32 HIGH -> BILL line pulled LOW
-- GPIO33 HIGH -> COIN line pulled LOW
+Pulse output:
+  GPIO32 HIGH на время PULSE_ON_TIME → U3 тянет BILL_IN LOW
+  GPIO33 HIGH на время PULSE_ON_TIME → U4 тянет COIN_IN LOW
+
+Параметры импульсов загружаются по HTTP:
+  GET /test/{device_id}/pulse-config   каждые 5 секунд
 
 
 ==================== FINAL CHECKLIST ====================
 
-[ ] No continuity between GND_ESP32 and MACHINE_GND
-[ ] U1 pin8/pin7 on +5V_ESP
-[ ] U2 pin8/pin7 on +5V_ISO
-[ ] GPIO14 has 4.7k pull-up to +3V3_ESP
-[ ] U1 and U2 each have their own 100nF capacitor
-[ ] U3/U4 stay on PC817 and are not rewired to 6N137
-[ ] MDB RXD / pulse inputs are HIGH in idle
-[ ] U1/U2 pin1 and pin4 left unconnected
+[ ] Нет проводимости между GND_ESP32 и MACHINE_GND (проверьте омметром)
+[ ] U1 pin8 и pin7 подключены к +5V_ESP
+[ ] U2 pin8 и pin7 подключены к +5V_ISO
+[ ] GPIO14 имеет pull-up R5 (4.7 кОм) к +3V3_ESP
+[ ] C1 (100 нФ) между U1 pin8 и U1 pin5
+[ ] C2 (100 нФ) между U2 pin8 и U2 pin5
+[ ] U1 pin1 и pin4 не подключены
+[ ] U2 pin1 и pin4 не подключены
+[ ] Измерьте напряжение MDB pin2 TXD мультиметром до пайки R1
+[ ] GPIO14 в idle (VMC запущен) ≈ 0V — если HIGH, U1 не получает питание или TXD не подключён
+[ ] MDB RXD и все pulse-входы HIGH в idle
+[ ] +5V_ISO не соединён с +5V_ESP (разные стороны изоляции)

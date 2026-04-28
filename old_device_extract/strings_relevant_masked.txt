@@ -1,0 +1,269 @@
+   615	No client cert=***MASKED***
+   616	Cert=***MASKED***
+   617	firmware_version
+   618	2.3.1
+   619	ESP32
+   620	JITPClient: Checking device config availability: %s
+   621	JITPClient: Device config - PaymentMode: %d, DeviceType: %d, ControlPin: %d, AllowExt: %s
+   622	device_config
+   623	JITPClient: Including device configuration in activation request
+   624	JITPClient: No device configuration available - sending activation without config
+   625	JITPClient: Current config for debug - PaymentMode: %d, DeviceType: %d, ControlPin: %d, AllowExt: %s
+   626	JITPClient: Sending activation request with mTLS
+   627	Request payload: 
+   628	/api/v1/devices/activate
+   629	Failed to send mTLS activation request
+   630	JITPClient: Received activation response
+   631	Response: 
+   632	Failed to parse activation response
+   633	JITPClient: mTLS activation successful
+   634	MQTT Broker: %s:%d
+   635	[%Co
+   636	O8M2
+   637	EmptyInput
+   638	IncompleteInput
+   639	InvalidInput
+   640	NoMemory
+   725	AppController: MQTT reconnecting 
+   726	 %lu sec, attempt %d/5
+   727	AppController: In error state - will retry soon
+   728	AppController: Attempting recovery from error state - entering connecting state
+   729	AppController: Checking initial state
+   730	AppController: ERROR - No connection mode configured (use USB Desktop Tool or Web configuration)
+   731	AppController: Connection mode configured, attempting to connect
+   732	AppController: In initializing state
+   733	AppController: Starting clean state machine
+   734	AppController: Starting lightweight initialization
+   735	AppController: InputPulseTracker initialized for physical cash monitoring (GPIO 27, 14 in use)
+   736	AppController: InputPulseTracker skipped - MDB Cashless mode uses BV sniffing instead
+   737	AppController: InputPulseTracker skipped - MDB Coin Emulator handles cash natively
+   738	AppController: InputPulseTracker disabled - cash events are turned off
+   739	AppController: ModemPowerRelay initialized for connection recovery
+   740	AppController: GPIO 19 set to HIGH (cash acceptor power)
+   820	dev_enf_ack
+   821	dev_enf_cool
+   822	dev_enf_max
+   823	  Button pulse duration: %d ms
+   824	  Seconds per credit: %.2f
+   825	  Activity detection: %s (pin: %d, activeLow: %s)
+   826	  Activity window: %d ms
+   827	  Enforcement: grace=%dms, ack=%dms, cool=%dms, max=%d
+   828	dev_mdb_rx
+   829	dev_mdb_tx
+   830	dev_mdb_prx
+   831	dev_mdb_addr
+   832	dev_mdb_tout
+   833	  MDB RX Pin: %d, TX Pin: %d, Periph RX Pin: %d
+   834	  MDB Address: 0x%02X
+   835	  MDB Session Timeout: %d sec
+   836	  MDB Coin Emulator RX Pin: %d, TX Pin: %d
+   837	  MDB Coin Emulator Address: 0x08 (fixed)
+   838	  MDB Coin Emulator Session Timeout: %d sec
+   839	  WARNING: Unknown payment mode, using defaults
+   840	mqtt_broker=***MASKED***
+  1065	DeviceFactory: Creating button timer device controller
+  1066	DeviceFactory: Creating credit-with-relay device controller
+  1067	DeviceFactory: Creating MDB Slave device controller
+  1068	DeviceFactory: Creating MDB Coin Emulator controller
+  1069	ERROR: Unsupported payment mode: %d
+  1070	MDBCoinEmu
+  1071	[%s] ERROR: Invalid payment (initialized: %s, amount: %.2f)
+  1072	[%s] ERROR: Credit queue not available
+  1073	[%s] Payment processed: %.2f som (ID: %s)
+  1074	[%s] ERROR: Failed to add payment to queue (queue full?)
+  1075	[%s] Delivery confirmed: %.2f som (ID: %s)
+  1076	[%s] Stopping MDB Coin Emulator
+  1077	[%s] MDB Emulator stopped
+  1078	[%s] ERROR: Wrong payment mode: %s
+  1079	[%s] ERROR: Invalid MDB pins (RX: %d, TX: %d)
+  1080	[%s] WARNING: Session timeout %d out of range (10-300), using default 60s
+  1081	[%s] ERROR: Invalid configuration
+  1082	[%s] WARNING: Already initialized, stopping first
+  1083	[%s] Initializing MDB Coin Emulator (RX: %d, TX: %d, timeout: %ds)
+  1084	[%s] ERROR: Failed to create credit queue
+  1085	[%s] ERROR: Failed to create MDB data queue
+  1086	[%s] ERROR: Failed to install ISR service: %d
+  1087	mdb_coin_emu
+  1088	[%s] ERROR: Failed to create MDB task
+  1089	coin_diag
+  1090	[%s] MDB Coin Emulator initialized (ISR-based read, Core 1)
+  1091	INACTIVE
+  1092	ENABLED
+  1093	DISABLED
+  1094	[MDB-DIAG] COIN CMD: R=%lu S=%lu T=%lu P=%lu C=%lu D=%lu E=%lu
+  1095	[MDB-DIAG] BILL CMD: R=%lu S=%lu P=%lu T=%lu E=%lu
+  1096	[MDB-DIAG] COIN=%s BILL=%s Pending=%u Total=%u Accepted=%lu
+  1097	[MDB-DIAG] Bytes=%lu Addr=%lu TX=%lu
+  1098	[MDB-DIAG] CoinEn=0x%04X BillEn=0x%04X Features=0x%08lX
+  1099	3769G600351 
+  1100	CF7900MDB   
+  1101	022290281967
+  1102	VN2600RU    
+  1103	coin_state
+  1104	bill_state
+  1105	pending_credit
+  1106	total_credit
+  1107	[MDB] Controller stopped
+  1108	[MDB] ERROR: Not initialized
+  1109	[MDB] processPayment: %.2f KGS (scaled: %u)
+  1110	[MDB] ERROR: Invalid pins RX:%d TX:%d
+  1111	[MDB] ERROR: Invalid address 0x%02X
+  1112	[MDB] ERROR: Invalid configuration
+  1113	[MDB] Initialized (RX:%d, TX:%d, Addr:0x%02X, Timeout:%u sec)
+  1114	cashless_loop
+  1115	[MDB] cashless_loop task pinned to Core %d
+  1116	mdb_diag
+  1117	[MDB] Task started
+  1118	VEND
+  1119	[MDB] %s -> %s
+  1120	            
+  1160	Failed to abort update
+  1161	reboot
+  1162	show_config
+  1163	update_config
+  1164	ota_check
+  1165	ota_update
+  1166	ota_abort
+  1167	OTA check initiated
+  1168	target_version
+  1169	OTA update started for version 
+  1170	Failed to start update
+  1171	[SET]
+  1172	Configuration retrieved
+  1173	device_id
+  1174	nvs_config
+  1175	wifi_connected
+  1176	wifi_ip
+  1177	wifi_rssi
+  1178	mqtt_connected
+  1179	runtime_status
+  1180	uptime
+  1181	min_free_heap
+  1182	chip_id
+  1183	sdk_version
+  1184	Device will reboot in 5 seconds
+  1185	reboot_delay_seconds
+  1186	RebootTask
+  1187	Missing params
+  1188	Invalid amount
+  1189	CMD_
+  1190	Payment processed successfully
+  1191	device_active
+  1192	device_
+  1193	Status retrieved
+  1194	connection_mode
+  1195	device_info
+  1196	command_id
+  1197	command_response
+  1198	CMD: JSON parse failed
+  1199	CMD: missing command field
+  1200	CMD: %s
+  1201	Unknown command
+  1202	CMD: unknown command: 
+  1203	Missing params field
+  1204	No configuration changes provided
+  1205	Failed to open NVS config namespace
+  1206	No valid configuration updates were applied
+  1207	Config updated %d key=***MASKED***
+  1208	Configuration updated successfully
+  1209	updated_count
+  1210	updated_key=***MASKED***
+  1211	restart_scheduled
+  1212	restart_delay_seconds
+  1213	ConfigRestartTask
+  1214	[OTA] Direct GitHub access is disabled. Updates must come through backend=***MASKED***
+  1215	[OTA] Error: %d - %s
+  1216	none
+  1217	network_error
+  1218	download_failed
+  1219	signature_invalid
+  1220	hash_mismatch
+  1221	version_rollback
+  1222	space_insufficient
+  1223	write_failed
+  1224	memory_error
+  1225	target
+  1226	[OTA] State changed: %d -> %d
+  1227	[OTA] Update check already in progress
+  1228	[OTA] Update check too soon
+  1229	[OTA] Starting download of version %s
+  1230	Not enough space for update
+  1231	Not enough free memory
+  1232	[OTA] OTA partition size: %u bytes, firmware size: %u bytes
+  1233	Failed to begin OTA update - 
+  1234	 (size: 
+  1235	 bytes, partition: 
+  1236	 bytes)
+  1237	[OTA] %s
+  1238	[OTA] Downloading firmware through backend=***MASKED***
+  1239	HTTP GET failed: 
+  1240	Failed to write firmware data
+  1241	[OTA] Download complete
+  1242	Download stream error
+  1243	[OTA] Verifying firmware...
+  1244	Firmware image verification failed
+  1245	[OTA] Verifying firmware hash...
+  1246	Failed to get update partition
+  1247	[OTA] Verifying firmware in partition %s (size: %d bytes)
+  1248	Failed to read partition: 
+  1249	[OTA] Hash verification progress: %.1f%%
+  1250	[OTA] Hash mismatch!
+  1251	[OTA]   Expected: %s
+  1252	[OTA]   Got:      %s
+  1253	Firmware hash mismatch
+  1254	[OTA] Firmware hash verification PASSED
+  1255	[OTA] WARNING: No hash provided, skipping verification
+  1256	[OTA] Firmware verification completed successfully
+  1257	[OTA] Checking for updates...
+  1258	Failed to check for updates
+  1259	[OTA] Aborting update...
+  1260	Update aborted by user
+  1261	[OTA] Previous update to %s was interrupted. Clearing state.
+  1262	[OTA] Backend=***MASKED***
+  1263	[OTA] Manager initialized. Current version: %s
+  1264	[OTA] Received check command: %s
+  1265	force
+  1266	present
+  1267	signature
+  1268	min_version
+  1269	max_version
+  1270	mandatory
+  1271	changelog
+  1272	release_date
+  1273	[OTA] Manifest populated from command:
+  1274	  Version: %s
+  1275	  URL=***MASKED***
+  1276	  Size: %u bytes
+  1277	  Hash: %s
+  1278	  Signature: %s
+  1279	  Cert=***MASKED***
+  1280	[OTA] Invalid command data: missing required fields
+  1281	[OTA] Version empty: %s, URL=***MASKED***
+  1282	[OTA] Received abort command: %s
+  1283	Update aborted
+  1284	[OTA] Received update command: %s
+  1285	Cannot start update in current state
+  1315	[OTA] Reboot now
+  1316	InputPulseTracker: Coin counter reset
+  1317	InputPulseTracker: Bill counter reset
+  1318	  Coin input pin: %d (Unit 0)
+  1319	  Bill input pin: %d (Unit 1)
+  1320	  Bill input pin: DISABLED (pin conflict or not configured)
+  1321	InputPulseTracker: Initialized (PCNT Hardware Mode)
+  1322	InputPulseTracker: Deinitialized
+  1323	InputPulseTracker: Coin series STARTED
+  1324	InputPulseTracker: Coin series COMPLETED (%u pulses)
+  1325	InputPulseTracker: Bill series STARTED
+  1326	InputPulseTracker: Bill series COMPLETED (%u pulses)
+  1327	ModemPowerRelay: Initialized on pin %d (active-high: LOW=ON, modem power ON)
+  1328	ModemPowerRelay: WARNING - power cycle already in progress, ignoring request
+  1329	ModemPowerRelay: Starting power cycle (OFF for %lu ms)
+  1330	ModemPowerRelay: Modem power OFF (GPIO HIGH)
+  1331	ModemPowerRelay: Modem power ON (GPIO LOW) - power cycle complete
+  1332	PulseEmulator: Initialized on pin %d with %s polarity
+  1333	PulseEmulator: Pin in INPUT mode (hi-Z) for EMI protection
+  1334	PulseEmulator: Deinitialized, pin in INPUT mode
+  1335	ERROR: PulseEmulator not initialized
+  1336	PulseEmulator: Sending %d pulse(s) on pin %d
+  1337	PulseEmulator: %d pulse(s) done
+  1338	nvs_cert=***MASKED***

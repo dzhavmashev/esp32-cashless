@@ -1,0 +1,13 @@
+key,type,span,chunk,raw_data_hex,value_candidate
+conn_mode,i32,span=1,chunk=255,01000000ffffffff,1
+dev_pay_mode,u8,span=1,chunk=255,04ffffffffffffff,4
+dev_type,u8,span=1,chunk=255,06ffffffffffffff,6
+dev_ctrl_pin,u8,span=1,chunk=255,1affffffffffffff,26
+dev_allow_ext,u8,span=1,chunk=255,01ffffffffffffff,1
+dev_cash_evt,u8,span=1,chunk=255,01ffffffffffffff,1
+dev_act_pin,u8,span=1,chunk=255,0effffffffffffff,14
+dev_mdb_rx,u8,span=1,chunk=255,1affffffffffffff,26
+dev_mdb_tx,u8,span=1,chunk=255,1bffffffffffffff,27
+dev_mdb_prx,u8,span=1,chunk=255,0dffffffffffffff,13
+dev_mdb_addr,u8,span=1,chunk=255,10ffffffffffffff,16
+dev_mdb_tout,u16,span=1,chunk=255,3c00ffffffffffff,60

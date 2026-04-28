@@ -1,0 +1,4 @@
+
+A fatal error occurred: This is not a valid image (invalid magic number: 0xff).
+Warning: DEPRECATED: 'esptool.py' is deprecated. Please use 'esptool' instead. The '.py' suffix will be removed in a future major release.
+esptool v5.2.0

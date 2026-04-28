@@ -1456,59 +1456,125 @@ namespace
   char serialCommandBuffer[kSerialCommandBufferSize] = {};
   size_t serialCommandLength = 0;
 
-  bool gpio14DiagEnabled = true;
-  int gpio14LastLevel = -1;
-  uint32_t gpio14EdgeCount = 0;
-  uint32_t gpio14LowCount = 0;
-  uint32_t gpio14HighCount = 0;
-  uint32_t gpio14LastPrintMs = 0;
-
-  void updateGpio14Diag()
-  {
-    if (!gpio14DiagEnabled)
-    {
-      return;
-    }
-
-    const int level = gpio_get_level(static_cast<gpio_num_t>(MDB_RX_PIN));
-
-    if (level == 0)
-    {
-      gpio14LowCount++;
-    }
-    else
-    {
-      gpio14HighCount++;
-    }
-
-    if (gpio14LastLevel < 0)
-    {
-      gpio14LastLevel = level;
-    }
-    else if (level != gpio14LastLevel)
-    {
-      gpio14EdgeCount++;
-      gpio14LastLevel = level;
-    }
-
-    const uint32_t nowMs = millis();
-    if (nowMs - gpio14LastPrintMs >= 1000)
-    {
-      gpio14LastPrintMs = nowMs;
-
-      Serial.print("[GPIO14_DIAG] level=");
-      Serial.print(level);
-      Serial.print(" edges=");
-      Serial.print(gpio14EdgeCount);
-      Serial.print(" low_samples=");
-      Serial.print(gpio14LowCount);
-      Serial.print(" high_samples=");
-      Serial.println(gpio14HighCount);
-    }
-  }
-
   const char *resetReasonToString(esp_reset_reason_t reason);
   void handleSerialConsole();
+
+static uint32_t cashCtrlParseU32Token(const String &source, int index, uint32_t fallback)
+{
+  int start = 0;
+  int tokenIndex = 0;
+
+  while (start < source.length())
+  {
+    while (start < source.length() && source[start] == ' ')
+    {
+      start++;
+    }
+
+    if (start >= source.length())
+    {
+      break;
+    }
+
+    int end = source.indexOf(' ', start);
+    if (end < 0)
+    {
+      end = source.length();
+    }
+
+    if (tokenIndex == index)
+    {
+      return static_cast<uint32_t>(source.substring(start, end).toInt());
+    }
+
+    tokenIndex++;
+    start = end + 1;
+  }
+
+  return fallback;
+}
+
+static int cashAcceptorCtrlActiveLevel()
+{
+  return CASH_ACCEPTOR_CTRL_ACTIVE_HIGH ? 1 : 0;
+}
+
+static int cashAcceptorCtrlInactiveLevel()
+{
+  return CASH_ACCEPTOR_CTRL_ACTIVE_HIGH ? 0 : 1;
+}
+
+static void cashAcceptorCtrlSet(bool enabled)
+{
+  if (!CASH_ACCEPTOR_CTRL_ENABLED)
+  {
+    return;
+  }
+
+  const gpio_num_t pin = static_cast<gpio_num_t>(CASH_ACCEPTOR_CTRL_GPIO);
+  gpio_reset_pin(pin);
+  gpio_set_direction(pin, GPIO_MODE_OUTPUT);
+  gpio_set_pull_mode(pin, GPIO_FLOATING);
+  gpio_set_level(pin, enabled ? cashAcceptorCtrlActiveLevel() : cashAcceptorCtrlInactiveLevel());
+}
+
+static void cashAcceptorCtrlPrintStatus(const char *tag)
+{
+  const gpio_num_t pin = static_cast<gpio_num_t>(CASH_ACCEPTOR_CTRL_GPIO);
+
+  Serial.print("[");
+  Serial.print(tag);
+  Serial.print("] enabled=");
+  Serial.print(CASH_ACCEPTOR_CTRL_ENABLED ? 1 : 0);
+  Serial.print(" gpio=");
+  Serial.print(CASH_ACCEPTOR_CTRL_GPIO);
+  Serial.print(" active_high=");
+  Serial.print(CASH_ACCEPTOR_CTRL_ACTIVE_HIGH ? 1 : 0);
+  Serial.print(" level=");
+  Serial.println(gpio_get_level(pin));
+}
+
+static void cashAcceptorCtrlInit()
+{
+  if (!CASH_ACCEPTOR_CTRL_ENABLED)
+  {
+    Serial.println("[CASH_CTRL_INIT] disabled");
+    return;
+  }
+
+  cashAcceptorCtrlSet(true);
+  cashAcceptorCtrlPrintStatus("CASH_CTRL_INIT_ON");
+
+  if (CASH_ACCEPTOR_CTRL_BOOT_SETTLE_MS > 0)
+  {
+    Serial.print("[CASH_CTRL_INIT] settle_ms=");
+    Serial.println(CASH_ACCEPTOR_CTRL_BOOT_SETTLE_MS);
+    delay(CASH_ACCEPTOR_CTRL_BOOT_SETTLE_MS);
+  }
+}
+
+static void cashAcceptorCtrlPulse(uint32_t offMs, uint32_t onSettleMs)
+{
+  if (!CASH_ACCEPTOR_CTRL_ENABLED)
+  {
+    Serial.println("[CASH_CTRL_PULSE] disabled");
+    return;
+  }
+
+  Serial.print("[CASH_CTRL_PULSE] off_ms=");
+  Serial.print(offMs);
+  Serial.print(" on_settle_ms=");
+  Serial.println(onSettleMs);
+
+  cashAcceptorCtrlSet(false);
+  cashAcceptorCtrlPrintStatus("CASH_CTRL_PULSE_OFF");
+  delay(offMs);
+
+  cashAcceptorCtrlSet(true);
+  cashAcceptorCtrlPrintStatus("CASH_CTRL_PULSE_ON");
+  delay(onSettleMs);
+}
+
   void dispatchSerialConsoleLine(const String &line);
   void dispatchSerialCommand(const String &command,
                              const String &payloadJson = "{}");
@@ -1614,48 +1680,31 @@ namespace
       return;
     }
 
-    if (command == "gpio19_hold_high")
+    if (command == "cash_ctrl_on")
     {
-      const uint32_t holdMs = arg.isEmpty() ? 5000UL : static_cast<uint32_t>(arg.toInt());
-      const gpio_num_t txPin = static_cast<gpio_num_t>(MDB_TX_PIN);
-
-      Serial.print("[GPIO19_TEST] set HIGH for ms=");
-      Serial.println(holdMs);
-
-      gpio_set_direction(txPin, GPIO_MODE_OUTPUT);
-      gpio_set_level(txPin, 1);
-
-      const uint32_t started = millis();
-      while (millis() - started < holdMs)
-      {
-        Serial.print("[GPIO19_TEST] gpio19=");
-        Serial.println(gpio_get_level(txPin));
-        delay(250);
-      }
-
-      gpio_set_level(txPin, 0);
-      Serial.print("[GPIO19_TEST] released LOW gpio19=");
-      Serial.println(gpio_get_level(txPin));
+      cashAcceptorCtrlSet(true);
+      cashAcceptorCtrlPrintStatus("CASH_CTRL_ON");
       return;
     }
 
-    if (command == "gpio19_set_low")
+    if (command == "cash_ctrl_off")
     {
-      const gpio_num_t txPin = static_cast<gpio_num_t>(MDB_TX_PIN);
-      gpio_set_direction(txPin, GPIO_MODE_OUTPUT);
-      gpio_set_level(txPin, 0);
-      Serial.print("[GPIO19_TEST] forced LOW gpio19=");
-      Serial.println(gpio_get_level(txPin));
+      cashAcceptorCtrlSet(false);
+      cashAcceptorCtrlPrintStatus("CASH_CTRL_OFF");
       return;
     }
 
-    if (command == "gpio19_set_high")
+    if (command == "cash_ctrl_status")
     {
-      const gpio_num_t txPin = static_cast<gpio_num_t>(MDB_TX_PIN);
-      gpio_set_direction(txPin, GPIO_MODE_OUTPUT);
-      gpio_set_level(txPin, 1);
-      Serial.print("[GPIO19_TEST] forced HIGH gpio19=");
-      Serial.println(gpio_get_level(txPin));
+      cashAcceptorCtrlPrintStatus("CASH_CTRL_STATUS");
+      return;
+    }
+
+    if (command == "cash_ctrl_pulse")
+    {
+      const uint32_t offMs = cashCtrlParseU32Token(arg, 0, 1000UL);
+      const uint32_t onSettleMs = cashCtrlParseU32Token(arg, 1, CASH_ACCEPTOR_CTRL_BOOT_SETTLE_MS);
+      cashAcceptorCtrlPulse(offMs, onSettleMs);
       return;
     }
 
@@ -1790,10 +1839,12 @@ namespace
 #endif
 } // namespace
 
+
 void setup()
 {
 #if MDB_RX_ONLY_SNIFFER
   Serial.begin(115200);
+  cashAcceptorCtrlInit();
   delay(200);
   Serial.println();
   Serial.println("MDB bit-bang RX-only sniffer + coin responder test");
@@ -1814,6 +1865,8 @@ void setup()
   Serial.println("Authorization point: COIN TYPE 0C -> ACK");
   Serial.println("Auth log format: [AUTH] SETUP - ok/fail/pending ...");
   Serial.println("RX-only commands: help, tx_line_test, summary_now");
+
+  Serial.println("[MDB_MODE_COMPAT_BANNER] mode=cashless_compat_old_device pins=KEEP_CURRENT rx_gpio=14 tx_gpio=19 raw_address=0x10 decoded_address=0x02 coin_changer=off");
   Serial.println("RX polarity: U1 rewired as pull-down input, inverted=false");
 
   gpio_set_direction(static_cast<gpio_num_t>(MDB_TEST_TX_PIN), GPIO_MODE_OUTPUT);
@@ -1864,7 +1917,6 @@ void loop()
   mdbRx.printDiagnostics();
 #else
   // Основной цикл устройства: связь, логика оплаты, OTA и индикация.
-  updateGpio14Diag();
   handleSerialConsole();
   connectionService.update();
   sendDeviceInfoIfNeeded();

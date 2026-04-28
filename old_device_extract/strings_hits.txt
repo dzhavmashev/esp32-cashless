@@ -1,0 +1,621 @@
+162:dev_ctrl_pin
+164:Wdev_cash_evt
+176:R;dev_act_pin
+181: dev_enf_ack
+184:Gdev_mdb_rx
+185:dev_mdb_tx
+186:dev_mdb_prx
+187:hijWdev_mdb_addr
+188:dev_mdb_tout
+204:cal_version
+225:sta.bss_retry
+228:zsta.apinfo
+231:sta.apinfo
+233:sta.apinfo
+236:sta.apinfo
+238:5sta.apinfo
+241:sta.apinfo
+246:sta.apinfo
+249:sta.apinfo
+255:\sta.apinfo
+258:sta.apinfo
+266:+sta.apinfo
+269:sta.apinfo
+272:\sta.apinfo
+275:sta.apinfo
+281:+sta.apinfo
+284:sta.apinfo
+287:sta.apinfo
+290:sta.apinfo
+291:sta.apinfo
+295:arduino-lib-builder
+300:failed to post event=%d ret=%d
+348:rxa_eb mem fail tid=%d
+377:rx ba window %d error
+379:tx buf type %d error
+380:dynamic tx buf number %d is out of range
+381:static tx buf number %d is out of range
+382:dynamic rx buf number %d is out of range
+383:static rx buf number %d is out of range
+384:wpa crypto funcs expected size=%d version=%d, actual size=%d version=%d
+394:sta is connecting, return error
+395:init nvs: failed, ret=%x
+417:setup rate: out of memory!
+431:Association refused temporarily, comeback time %lu (TUs) too long, max allowed 5000 (TUs)
+519:Expected to init %d rx buffer, actual is %d
+520:Failed to init rx desc space, buffer number=%d
+594:control_pin
+617:firmware_version
+621:JITPClient: Device config - PaymentMode: %d, DeviceType: %d, ControlPin: %d, AllowExt: %s
+625:JITPClient: Current config for debug - PaymentMode: %d, DeviceType: %d, ControlPin: %d, AllowExt: %s
+642:AppController: Registering essential callbacks
+649:AppController: MQTT=***MASKED***
+654:[AppController] Delivery confirmed: TxID=%s, amount=%.2f, item=%u
+677: will retry
+683:mdb_coin_emulator
+688:AppController: Device activated but missing MQTT=***MASKED***
+700:AppController: Device configuration - PaymentMode: %d, DeviceType: %d, ControlPin: %d
+704:AppController: delivery_confirmed callback registered
+714:AppController: Network lost during activation - returning to CONNECTING
+716:AppController: Activation timeout - returning to CONNECTING
+727:AppController: In error state - will retry soon
+735:AppController: InputPulseTracker initialized for physical cash monitoring (GPIO 27, 14 in use)
+736:AppController: InputPulseTracker skipped - MDB Cashless mode uses BV sniffing instead
+737:AppController: InputPulseTracker skipped - MDB Coin Emulator handles cash natively
+738:AppController: InputPulseTracker disabled - cash events are turned off
+740:AppController: GPIO 19 set to HIGH (cash acceptor power)
+743:AppController: Activation failed - will retry
+756:  Cash events disabled - skipping MQTT=***MASKED***
+757:  Cash events disabled - skipping MQTT=***MASKED***
+758:CASH_
+762:cash
+766:cash_type
+769: Cash event sent: %s (TxID: %s)
+770: Failed to send cash event: %s
+771:  Cannot send cash event - MQTT=***MASKED***
+776:coin
+778:bill
+779:MDB_COIN_EMULATOR
+794:dev_ctrl_pin
+796:dev_cash_evt
+815:dev_act_pin
+820:dev_enf_ack
+825:  Activity detection: %s (pin: %d, activeLow: %s)
+827:  Enforcement: grace=%dms, ack=%dms, cool=%dms, max=%d
+828:dev_mdb_rx
+829:dev_mdb_tx
+830:dev_mdb_prx
+831:dev_mdb_addr
+832:dev_mdb_tout
+833:  MDB RX Pin: %d, TX Pin: %d, Periph RX Pin: %d
+834:  MDB Address: 0x%02X
+835:  MDB Session Timeout: %d sec
+836:  MDB Coin Emulator RX Pin: %d, TX Pin: %d
+837:  MDB Coin Emulator Address: 0x08 (fixed)
+838:  MDB Coin Emulator Session Timeout: %d sec
+852:WARNING: Current device config is invalid, returning default
+857:  NVS keys present: dev_pay_mode=%s, dev_type=%s, dev_ctrl_pin=%s
+858:  Current config: PaymentMode=%d, DeviceType=%d, ControlPin=%d, AllowExt=%s
+892:SecureMQTT=***MASKED***
+905:Pending ACKs: %u
+909:SecureMQTT=***MASKED***
+910:SecureMQTT=***MASKED***
+922:Failed to setup mTLS
+928:SecureMQTT=***MASKED***
+939:Unacceptable protocol version
+960:ActivityDetector: pin=%d, activeLow=%s, window=%dms
+963:Button pulse ended: Pin %d LOW
+967:ERROR: Invalid control pin: %d
+976:ERROR: feedbackPin must differ from controlPin, skipping ActivityDetector
+978:Button timer device controller initialized: %s (Pin: %d, Button duration: %dms)
+981:Service PAUSED: %us (awaiting ACK)
+982:Service started with button press: %u seconds (TxID: %s)
+991:controlPin
+998:feedbackEnabled
+999:feedbackReady
+1000:feedbackActive
+1013:enforcement_retry
+1014:max_retries
+1020:  delivery_confirmed: TxID=%s, amount=%.2f
+1021:Chair ACK during grace 
+1028:Enforcement ACK received
+1029:Enforcement no ACK 
+1047:CreditDeviceController: Initialized (%s, pin %d, %.2f KGS/pulse, pulse task on Core 1)
+1059:CreditWithRelayController: Initialized (pin %d, relay pin %d, %.2f KGS/pulse, Core 1)
+1060:controlRelayPin
+1067:DeviceFactory: Creating MDB Slave device controller
+1068:DeviceFactory: Creating MDB Coin Emulator controller
+1070:MDBCoinEmu
+1076:[%s] Stopping MDB Coin Emulator
+1077:[%s] MDB Emulator stopped
+1079:[%s] ERROR: Invalid MDB pins (RX: %d, TX: %d)
+1082:[%s] WARNING: Already initialized, stopping first
+1083:[%s] Initializing MDB Coin Emulator (RX: %d, TX: %d, timeout: %ds)
+1085:[%s] ERROR: Failed to create MDB data queue
+1087:mdb_coin_emu
+1088:[%s] ERROR: Failed to create MDB task
+1089:coin_diag
+1090:[%s] MDB Coin Emulator initialized (ISR-based read, Core 1)
+1094:[MDB-DIAG] COIN CMD: R=%lu S=%lu T=%lu P=%lu C=%lu D=%lu E=%lu
+1095:[MDB-DIAG] BILL CMD: R=%lu S=%lu P=%lu T=%lu E=%lu
+1096:[MDB-DIAG] COIN=%s BILL=%s Pending=%u Total=%u Accepted=%lu
+1097:[MDB-DIAG] Bytes=%lu Addr=%lu TX=%lu
+1098:[MDB-DIAG] CoinEn=0x%04X BillEn=0x%04X Features=0x%08lX
+1099:3769G600351 
+1100:CF7900MDB   
+1103:coin_state
+1104:bill_state
+1107:[MDB] Controller stopped
+1108:[MDB] ERROR: Not initialized
+1109:[MDB] processPayment: %.2f KGS (scaled: %u)
+1110:[MDB] ERROR: Invalid pins RX:%d TX:%d
+1111:[MDB] ERROR: Invalid address 0x%02X
+1112:[MDB] ERROR: Invalid configuration
+1113:[MDB] Initialized (RX:%d, TX:%d, Addr:0x%02X, Timeout:%u sec)
+1114:cashless_loop
+1115:[MDB] cashless_loop task pinned to Core %d
+1116:mdb_diag
+1117:[MDB] Task started
+1119:[MDB] %s -> %s
+1121:mdb_cashless
+1128:@Device power: %s (Pin %d)
+1129:Service started: %u seconds (TxID: %s)
+1132:Processing timer payment: %.2f KGS = %u seconds (TxID: %s)
+1148:Timer device controller initialized: %s (Pin: %d)
+1155:Setup completed - starting state machine
+1168:target_version
+1169:OTA update started for version 
+1172:Configuration retrieved
+1183:sdk_version
+1193:Status retrieved
+1214:[OTA] Direct GitHub access is disabled. Updates must come through backend.
+1221:version_rollback
+1229:[OTA] Starting download of version %s
+1232:[OTA] OTA partition size: %u bytes, firmware size: %u bytes
+1238:[OTA] Downloading firmware through backend proxy
+1240:Failed to write firmware data
+1243:[OTA] Verifying firmware...
+1244:Firmware image verification failed
+1245:[OTA] Verifying firmware hash...
+1247:[OTA] Verifying firmware in partition %s (size: %d bytes)
+1253:Firmware hash mismatch
+1254:[OTA] Firmware hash verification PASSED
+1255:[OTA] WARNING: No hash provided, skipping verification
+1256:[OTA] Firmware verification completed successfully
+1262:[OTA] Backend will send a new update command if needed.
+1263:[OTA] Manager initialized. Current version: %s
+1268:min_version
+1269:max_version
+1274:  Version: %s
+1281:[OTA] Version empty: %s, URL empty: %s, Size: %u
+1289:firmware_url
+1290:firmware_size
+1291:[OTA] Installing firmware...
+1292:previous_version
+1299:retry_possible
+1301:[OTA] Retrying in %d ms (attempt %d/%d)
+1302:[OTA] Returning to idle state
+1308:Downloading firmware
+1309:Verifying firmware
+1316:InputPulseTracker: Coin counter reset
+1317:InputPulseTracker: Bill counter reset
+1318:  Coin input pin: %d (Unit 0)
+1319:  Bill input pin: %d (Unit 1)
+1320:  Bill input pin: DISABLED (pin conflict or not configured)
+1321:InputPulseTracker: Initialized (PCNT Hardware Mode)
+1322:InputPulseTracker: Deinitialized
+1323:InputPulseTracker: Coin series STARTED
+1324:InputPulseTracker: Coin series COMPLETED (%u pulses)
+1325:InputPulseTracker: Bill series STARTED
+1326:InputPulseTracker: Bill series COMPLETED (%u pulses)
+1327:ModemPowerRelay: Initialized on pin %d (active-high: LOW=ON, modem power ON)
+1330:ModemPowerRelay: Modem power OFF (GPIO HIGH)
+1331:ModemPowerRelay: Modem power ON (GPIO LOW) - power cycle complete
+1332:PulseEmulator: Initialized on pin %d with %s polarity
+1333:PulseEmulator: Pin in INPUT mode (hi-Z) for EMI protection
+1334:PulseEmulator: Deinitialized, pin in INPUT mode
+1336:PulseEmulator: Sending %d pulse(s) on pin %d
+1384:HeartbeatManager: MQTT=***MASKED***
+1387:/home/runner/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiGeneric.cpp
+1389:[%6u][E][%s:%u] %s(): Set Backup DNS Failed!
+1390:[%6u][E][%s:%u] %s(): Set Fallback DNS Failed!
+1432:_eventCallback
+1436:tcpipInit
+1439:/home/runner/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiSTA.cpp
+1459:/home/runner/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src/WiFiClientSecure.cpp
+1463:@/home/runner/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src/esp_crt_bundle.c
+1472:esp_crt_verify_callback
+1474:/home/runner/.platformio/packages/framework-arduinoespressif32/libraries/WiFiClientSecure/src/ssl_client.cpp
+1486:[%6u][E][%s:%u] %s(): mbedtls_ssl_conf_psk returned %d
+1498:@/home/runner/.platformio/packages/framework-arduinoespressif32/libraries/Preferences/src/Preferences.cpp
+1540:Could Not Activate The Firmware
+1542:/home/runner/.platformio/packages/framework-arduinoespressif32/libraries/Update/src/Updater.cpp
+1551:/home/runner/.platformio/packages/framework-arduinoespressif32/libraries/HTTPClient/src/HTTPClient.cpp
+1586:/home/runner/.platformio/packages/framework-arduinoespressif32/cores/esp32/HardwareSerial.cpp
+1588:uart_event_task
+1589:[%6u][E][%s:%u] %s():  -- UART%d Event Task not Created!
+1592:[%6u][E][%s:%u] %s(): UART driver failed to start. Please check the logs.
+1593:[%6u][E][%s:%u] %s(): Could not detect baudrate. Serial data at the port must be present within the timeout for detection to be possible
+1599:/home/runner/.platformio/packages/framework-arduinoespressif32/cores/esp32/WString.cpp
+1603:/home/runner/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-gpio.c
+1604:[%6u][E][%s:%u] %s(): Invalid pin selected
+1605:[%6u][E][%s:%u] %s(): GPIO config failed
+1606:__pinMode
+1607:/home/runner/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-misc.c
+1609:[%6u][E][%s:%u] %s(): OTA verification failed! Start rollback to the previous version ...
+1614:/home/runner/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-psram.c
+1618:uart_intr_config(uart->num, &uart_intr)
+1619:/home/runner/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-uart.c
+1620:uart_flush_input(uart->num)
+1621:"(Cannot use REG_SET_FIELD for DPORT registers use DPORT_REG_SET_FIELD)" && (!((((pin_name)) >= 0x3ff00000) && ((pin_name)) <= 0x3ff13FFC))
+1622://home/runner/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32/include/hal/esp32/include/hal/gpio_ll.h
+1624:[%6u][E][%s:%u] %s(): UART%d failed to attach RX pin %d
+1625:[%6u][E][%s:%u] %s(): UART%d failed to attach TX pin %d
+1626:[%6u][E][%s:%u] %s(): UART%d failed to attach CTS pin %d
+1627:[%6u][E][%s:%u] %s(): UART%d failed to attach RTS pin %d
+1628:[%6u][E][%s:%u] %s(): UART%d set pins failed.
+1629:[%6u][E][%s:%u] %s(): UART number is invalid, please use number from 0 to %u
+1631:[%6u][E][%s:%u] %s(): UART%d changing baudrate failed.
+1632:[%6u][E][%s:%u] %s(): UART%d changing data length failed.
+1633:[%6u][E][%s:%u] %s(): UART%d changing parity failed.
+1634:[%6u][E][%s:%u] %s(): UART%d changing stop bits failed.
+1635:[%6u][E][%s:%u] %s(): UART%d changing RX pin failed.
+1636:[%6u][E][%s:%u] %s(): UART%d changing TX pin failed.
+1637:uartFlushTxOnly
+1638:uartEnd
+1639:uartBegin
+1640:_uartAttachPins
+1641:gpio_ll_iomux_func_sel
+1642:uartSetPins
+1646:/home/runner/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-cpu.c
+1647:[%6u][E][%s:%u] %s(): Callback Object Malloc Failed
+1654:gpio
+1656:GPIO number error
+1657:"(Cannot use REG_WRITE for DPORT registers use DPORT_REG_WRITE)" && (!(((((0x3ff44000 + 0x0530) + (gpio_num * 4))) >= 0x3ff00000) && (((0x3ff44000 + 0x0530) + (gpio_num * 4))) <= 0x3ff13FFC))
+1658:/IDF/components/hal/esp32/include/hal/gpio_ll.h
+1659:"(Cannot use SET_PERI_REG_MASK for DPORT registers use DPORT_SET_PERI_REG_MASK)" && (!((((GPIO_PIN_MUX_REG[gpio_num])) >= 0x3ff00000) && ((GPIO_PIN_MUX_REG[gpio_num])) <= 0x3ff13FFC))
+1660:GPIO output gpio_num error
+1661:"(Cannot use REG_SET_BIT for DPORT registers use DPORT_REG_SET_BIT)" && (!((((GPIO_PIN_MUX_REG[gpio_num])) >= 0x3ff00000) && ((GPIO_PIN_MUX_REG[gpio_num])) <= 0x3ff13FFC))
+1662:GPIO interrupt type error
+1663:GPIO pull mode error
+1665:E (%u) %s: GPIO_PIN mask error 
+1666:E (%u) %s: GPIO can only be used as input mode
+1668:/IDF/components/driver/gpio.c
+1669:GPIO isr service is not installed, call gpio_install_isr_service() first
+1670:GPIO ISR null
+1673:GPIO isr service already installed
+1674:"(Cannot use SET_PERI_REG_MASK for DPORT registers use DPORT_SET_PERI_REG_MASK)" && (!((((GPIO_PIN_MUX_REG[gpio])) >= 0x3ff00000) && ((GPIO_PIN_MUX_REG[gpio])) <= 0x3ff13FFC))
+1675:gpio_ll_iomux_in
+1676:gpio_isr_register
+1677:gpio_isr_handler_remove
+1678:gpio_isr_handler_add
+1679:gpio_install_isr_service
+1680:gpio_ll_iomux_func_sel
+1681:gpio_config
+1682:gpio_od_disable
+1683:gpio_od_enable
+1684:gpio_ll_output_disable
+1685:gpio_output_disable
+1686:gpio_output_enable
+1687:gpio_input_disable
+1688:gpio_ll_input_enable
+1689:gpio_input_enable
+1690:gpio_set_direction
+1691:gpio_set_pull_mode
+1692:gpio_set_level
+1693:gpio_intr_disable
+1694:gpio_intr_enable_on_core
+1695:gpio_intr_enable
+1696:gpio_set_intr_type
+1697:gpio_pulldown_dis
+1698:gpio_ll_pulldown_en
+1699:gpio_pulldown_en
+1700:gpio_pullup_dis
+1701:gpio_ll_pullup_en
+1702:gpio_pullup_en
+1709:PCNT GPIO NUM ERROR
+1724:gpio_ll_iomux_func_sel
+1725:_pcnt_set_pin
+1743:rtc_gpio_pulldown_dis
+1745:rtc_gpio_pulldown_en
+1747:rtc_gpio_pullup_dis
+1749:rtc_gpio_pullup_en
+1750:rtc_gpio_deinit
+1752:E (%u) %s: %s(%d): uart_num error
+1755:E (%u) %s: %s(%d): rx flow thresh error
+1757:E (%u) %s: %s(%d): uart driver error
+1759:E (%u) %s: %s(%d): tx_io_num error
+1760:E (%u) %s: %s(%d): rx_io_num error
+1764:!(is_rs485_mode && disabled && uart_hal_get_intraw_mask(&(uart_context[uart_num].hal)) & UART_INTR_TX_DONE)
+1765:/IDF/components/driver/uart.c
+1767:E (%u) %s: %s(%d): uart size error
+1768:E (%u) %s: %s(%d): uart data null
+1771:E (%u) %s: rx_buffered_len error
+1772:E (%u) %s: %s(%d): uart rx buffer length error
+1773:E (%u) %s: %s(%d): uart tx buffer length error
+1774:E (%u) %s: UART driver malloc error
+1775:E (%u) %s: UART driver already installed
+1776:E (%u) %s: %s(%d): rx fifo full threshold value error
+1777:E (%u) %s: call uart_driver_install API first
+1779:uart_set_rx_timeout
+1780:uart_set_rx_full_threshold
+1781:uart_driver_delete
+1782:uart_driver_install
+1783:uart_flush_input
+1784:uart_get_tx_buffer_free_size
+1785:uart_get_buffered_data_len
+1786:uart_reenable_intr_mask
+1787:uart_read_bytes
+1788:uart_write_bytes
+1789:uart_wait_tx_done
+1790:uart_wait_tx_done
+1791:uart_intr_config
+1792:uart_param_config
+1793:gpio_ll_iomux_func_sel
+1794:uart_set_pin
+1795:uart_isr_register
+1796:uart_enable_tx_intr
+1797:uart_pattern_queue_reset
+1798:uart_disable_intr_mask
+1799:uart_set_line_inverse
+1800:uart_get_baudrate
+1801:uart_set_baudrate
+1802:uart_get_parity
+1803:uart_set_parity
+1804:uart_get_stop_bits
+1805:uart_set_stop_bits
+1806:uart_get_word_length
+1807:uart_set_word_length
+1816:E (%u) %s: Rollback is not possible, do not have any suitable apps in slots
+1817:E (%u) %s: Running firmware is factory
+1834:E (%u) %s: Checksum failed. Calculated 0x%x read 0x%x
+1849:ret == 0
+1854:E (%u) %s: load_partitions returned 0x%x
+1894:esp_task_stack_is_sane_cache_disabled()
+1907:@mPageList.back().getSeqNumber(lastSeqNo)
+1924:pthread_local_storage_thread_deleted_callback
+1932:E (%u) %s: Print CPU %d (current core) backtrace
+1933:E (%u) %s: Print CPU %d backtrace
+1948:Backtrace:
+1959: and returning...
+1967:flash_ret == ESP_OK
+1974:Stack canary watchpoint triggered (
+2036:LoadStoreTLBMiss
+2037:LoadStoreTLBMultihit
+2052:/dev/uart
+2055:/IDF/components/vfs/vfs_uart.c
+2056:s_ctx[fd]->peek_char == NONE
+2058:uart_write
+2059:uart_return_char
+2060:uart_read
+2061:uart_close
+2062:uart_fstat
+2063:uart_fcntl
+2064:uart_fsync
+2067:E (%u) %s: %s %d %s ret=0x%X
+2110:E (%u) %s: Post-attach callback of driver(%p) failed with %d
+2129:handler_ctx
+2140:Pairwise key expansion
+2153:E (%u) %s: Send smartconfig ACK error: %d
+2160:E (%u) %s: ACK parameter malloc fail
+2161:sc_ack_send_task
+2162:E (%u) %s: Create sending smartconfig ACK task fail
+2173:E (%u) %s: esp_wifi_register_if_rxcb for if=%p failed with %d
+2174:E (%u) %s: netstack cb reg failed with %d
+2183:E (%u) %s: esp_wifi_internal_reg_rxcb for if=%d failed with %d
+2207:lwip_setsockopt_callback
+2209:lwip_getsockopt_callback
+2213:event_callback
+2232:tcpip_try_callback
+2233:tcpip_callback
+2245:malloc() must return aligned memory
+2256:netif_poll: invalid netif
+2279:netif_poll
+2294:mem_trim returned q == NULL
+2315:raw pcb recv callback altered pbuf payload pointer without eating packet
+2318:Checksum must fit into first pbuf
+2329:invalid socket state for recv callback
+2330:invalid socket state for sent callback
+2331:invalid socket state for err callback
+2332:invalid socket state for poll
+2338:unacked segments leaking
+2343:pcb->flags & TF_RXCLOSED
+2359:tcp_poll
+2371:tcp_backlog_accepted
+2405:tcp_free_acked_segments
+2444:tcp_send_empty_ack: invalid pcb
+2456:tcp_send_empty_ack
+2525:eth_ret != NULL
+2529:no packet queues allowed!
+2560:icmpv6 packet not a direct response
+2585:sys_sem_signal: sane return value
+2624:netconn_new_with_proto_and_callback
+2673:poll_tcp
+2796:result == core_id || result == SPINLOCK_FREE
+2797:/IDF/components/esp_hw_support/include/soc/spinlock.h
+2798:(result == SPINLOCK_FREE) == (lock->count == 0)
+2802:spinlock_release
+2803:spinlock_acquire
+2844:E (%u) %s: Not a valid or known package id: %d
+2846:"(Cannot use SET_PERI_REG_BITS for DPORT registers use DPORT_SET_PERI_REG_BITS)" && (!((((GPIO_PIN_MUX_REG[psram_io->flash_clk_io])) >= 0x3ff00000) && ((GPIO_PIN_MUX_REG[psram_io->flash_clk_io])) <= 0x3ff13FFC))
+2847:"(Cannot use SET_PERI_REG_BITS for DPORT registers use DPORT_SET_PERI_REG_BITS)" && (!((((GPIO_PIN_MUX_REG[psram_io->psram_clk_io])) >= 0x3ff00000) && ((GPIO_PIN_MUX_REG[psram_io->psram_clk_io])) <= 0x3ff13FFC))
+2853:gpio_ll_iomux_func_sel
+2854:psram_gpio_config
+2873:ESP_ERR_INVALID_VERSION
+2892:ESP_ERR_NVS_NEW_VERSION_FOUND
+2913:ESP_ERR_OTA_ROLLBACK_FAILED
+2914:ESP_ERR_OTA_ROLLBACK_INVALID_STATE
+2945:ESP_ERR_WIFI_TX_DISALLOW
+2961:ESP_ERR_DPP_TX_FAILURE
+3036:ESP_ERR_MBEDTLS_SSL_SETUP_FAILED
+3041:ESP_ERR_MBEDTLS_SSL_TICKET_SETUP_FAILED
+3044:ESP_ERR_WOLFSSL_CERT=***MASKED***
+3045:ESP_ERR_WOLFSSL_KEY_VERIFY_SETUP_FAILED
+3047:ESP_ERR_WOLFSSL_CTX_SETUP_FAILED
+3048:ESP_ERR_WOLFSSL_SSL_SETUP_FAILED
+3052:ESP_ERR_PING_BASE
+3053:ESP_ERR_PING_INVALID_PARAMS
+3054:ESP_ERR_PING_NO_MEM
+3191:/IDF/components/esp_hw_support/include/soc/spinlock.h
+3192:result == core_id || result == SPINLOCK_FREE
+3193:(result == SPINLOCK_FREE) == (lock->count == 0)
+3197:***ERROR*** A stack overflow in task 
+3199:spinlock_release
+3200:spinlock_acquire
+3201:pxPortInitialiseStack
+3208:pxStackBufferTemp != NULL
+3252:xQueueSemaphoreTake
+3270:xPortcheckValidStackMem(pxStackBuffer)
+3296:xReturn != ( -1 )
+3324:xTaskCreateStaticPinnedToCore
+3328:xReturn
+3353:xSemaphoreGive(prov_ctx_lock) == pdTRUE
+3357:xSemaphoreTake(prov_ctx_lock, portMAX_DELAY) == pdTRUE
+3378:Set BREDR TX POWER min %d max %d
+3395:pcReturn >= pxRingbuffer->pucHead && pcReturn <= pxRingbuffer->pucTail
+3396:pcReturn >= pxRingbuffer->pucHead && pcReturn < pxRingbuffer->pucTail
+3406:xReturn <= pxRingbuffer->xSize
+3416:vRingbufferReturnItemFromISR
+3417:vRingbufferReturnItem
+3430:prvReturnItemDefault
+3435:prvReturnItemByteBuf
+3461:checksum_size <= 32
+3463:Calculated checksum
+3464:Image checksum
+3486:esp_core_dump_get_stack
+3487:cks_ctx
+3488:/IDF/components/espcoredump/src/core_dump_checksum.c
+3489:cks_ctx != ((void *)0) || chs_ptr == ((void *)0)
+3490:checksum != ((void *)0)
+3491:esp_core_dump_print_checksum
+3492:esp_core_dump_checksum_finish
+3493:esp_core_dump_checksum_update
+3496:cal_version
+3505:E (%u) %s: %s: store calibration version failed(0x%x)
+3514:Group key expansion
+3515:IGTK key expansion
+3528:extended master secret=***MASKED***
+3747:DHM - Calculation of the DHM secret=***MASKED***
+3781:PK - Unsupported key version
+3809:RSA - The implementation does not offer the requested operation, for example, because of security violations or lack of functionality
+3836:SSL - Processing of the ClientKeyExchange handshake message failed in DHM / ECDH Calculate Secret=***MASKED***
+3841:SSL - Hardware acceleration function returned with error
+3852:SSL - DTLS client must retry for hello verification
+3866:SSL - An operation failed due to an unexpected version or configuration
+3873:X509 - The CRT/CRL/CSR version element is invalid
+3880:X509 - CRT/CRL/CSR has an unsupported version number
+3889:X509 - A fatal error occurred, eg the chain is too long or the vrfy callback failed
+3924:ENTROPY - No sources have been added to poll
+3925:ENTROPY - No strong sources have been added to poll
+4014:id-kp-timeStamping
+4015:Time Stamping
+4145:Other reason (can be used by verify callback)
+4170:coexist adapter function version error! Version %x is expected, but it is %x
+4177:OS adapter function version error! Version %d is expected, but it is %x
+4196:ap_tx
+4197:sta_tx
+4202:psq_tx
+4230:sta.apinfo
+4259:sta.bss_retry
+4292:ieee80211_sta_retry_assoc
+4312:@lmacTxDone
+4313:lmacTxFrame
+4314:lmacProcessTxError
+4315:lmacProcessTxRtsError
+4316:lmacProcessAckTimeout
+4318:lmacProcessLongRetryFail
+4319:lmacProcessShortRetryFail
+4320:lmacProcessTxComplete
+4324:lmacProcessTxSuccess
+4326:rcReachRetryLimit
+4331:wDev_AppendRxBlocks
+4332:wdevProcessRxSucDataAll
+4333:wDev_ProcessRxSucData
+4337:E (%d) %s: promis scan ret %d
+4347:I (%d) %s: SC version: %s
+4364:/home/runner/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiClient.cpp
+4461:/builds/idf/crosstool-NG/.build/xtensa-esp32-elf/src/newlib/newlib/libc/stdlib/dtoa.c
+4466:/builds/idf/crosstool-NG/.build/xtensa-esp32-elf/src/newlib/newlib/libc/stdlib/mprec.c
+4550:048@DHPTX\
+4556:`7	@h7	@d8	@Stack smashing protect failure!
+4561:Hl`dhTX\480<LPptx|
+4569:E (%u) %s: Failed to read checksum from core dump (%d)!
+4586:E (%u) %s: %s(%u): Version info writing failed. Returned (%d).
+4587:E (%u) %s: %s(%u): memory regions writing error, returned (%d).
+4588:E (%u) %s: %s(%u): ELF Size writing error, returned (%d).
+4589:E (%u) %s: %s(%u): ELF header writing error, returned (%d).
+4590:E (%u) %s: %s(%u): ELF header writing error, returned (%d).
+4591:E (%u) %s: %s(%u): EXTRA_INFO note segment processing failure, returned(%d).
+4592:E (%u) %s: %s(%u): Extra info note write failed. Returned (%d).
+4594:E (%u) %s: %s(%u): Version info note write failed. Returned (%d).
+4595:E (%u) %s: %s(%u): memory region write failed. Returned (%d).
+4597:E (%u) %s: %s(%u): Interrupted task stack write failed, return (%d).
+4598:E (%u) %s: %s(%u): Task %x, TCB write failed, return (%d).
+4599:E (%u) %s: %s(%u): Tasks regs addition failed, return (%d).
+4600:E (%u) %s: %s(%u): Task %x, stack write failed, return (%d).
+4601:E (%u) %s: %s(%u): Task %x, TCB write failed, return (%d).
+4602:E (%u) %s: %s(%u): PR_STATUS note segment processing failure, returned(%d).
+4603:E (%u) %s: %s(%u): Task %x, PR_STATUS write failed, return (%d).
+4604:E (%u) %s: %s(%u): Task %x, PR_STATUS write failed, return (%d).
+4605:E (%u) %s: %s(%u): Task %x, PR_STATUS write failed, return (%d).
+4606:E (%u) %s: %s(%u): Task %x, PR_STATUS write failed, return (%d).
+4607:E (%u) %s: %s(%u): NOTE segment header write failure, returned (%d).
+4608:E (%u) %s: Task (TCB:%x), (Stack:%x), stack processing failure = %d.
+4611:E (%u) %s: %s(%u): Write ELF note data failure, returned (%d)
+4624:E (%u) %s: Too small stack to keep frame: %d bytes!
+4628:E (%u) %s: Empty data to add to checksum calculation!
+4629:esp_core_dump_checksum
+4648:/builds/idf/crosstool-NG/.build/xtensa-esp32-elf/src/newlib/newlib/libc/time/gmtime.c
+4696:total_pwr=%ld, min=%ld, max=%ld, rftx=0x%x, att=%d, dc_i=%d, dc_q=%d
+4697:rxiq: rftx=0x%x, rfrx=x%x, att=%d, bb=0x%x, %d, %d
+4702:phy_version: %d, %s, %s, %s
+4705:TX_POWER_BACKOFF, 
+4706:TX_PWRCTRL_ATTEN, 
+4710:BT_TX_BB, 0x%x
+4711:bt_txpwr_atten, %d
+4715:rfrx:0x%x;
+4716:rftx:0x%x,0x%x;
+4725:bbtx 0x%x: 0x%x
+4726:brx 0x%x: 0x%x
+4727:nrx 0x%x: 0x%x
+4731:i2c_txrf %02d: 0x%x
+4742:RX_NOISEFLOOR, %d
+4743:TXCAP_TMX2G_CCT_LOAD, 
+4744:TXCAP_PA2G_CCT_STG1, 
+4745:TXCAP_PA2G_CCT_STG2, 
+4746:TXIQ,
+4747:TXDC, 
+4750:BT_TXIQ,
+4751:BT_TXDC, 
+4752:RXIQ, 
+4753:RXDC_RFRX_BT, 
+4754:RXDC_RFRX_WIFI, 
+4755:RXDC_RXBB_WIFI, 
+4756:TX_VDD33=%d
+4758:1,target_power,%d, %d, p_error,%d, correct_v,%d, error_accum, %d, tot_p,%d, coatt,%d, rf_g,%x,%x, txq_rate,%d, %d, chan,%d, rate_att,%d
+4781:E (%u) %s: No response from device when trying to retrieve Unique ID
+6324:rX<,
+7894:XRX5fu
+9807:  tXDf
+10385:MDB?f
+10738: Ptx
+10984:	b&IrXH
+12009:00tXTae_
+12038:pptX
+12088:wyTx
+12424:UYrXb
+12429:UYrXb
+12741:inEcTxfZQcwwqM/T4j41ZrE9PFV5V7FOUxfJ2etBqWqVICVl4yrp2gpli/DXQd3M
+12753:D6V6+2WPAgMBAAECggEAGxuuiBOonBHR0foeD3ZcNXpTxHLEpKWEOYB3+Arp5iZk
+12761:Vr7Ko2TxnGTnCrZbowSBBCerEQKBgQDrdJ/gGXLiJYFk2Bg10EvTXbAsa+LVnPLt
+12763:KCAudiCePWo8XIc2mjDX6v7NKVQ4K97rx+7LnXeTh/TTOa0YkzxwhGdwMUrZ5qGf
+12792:X0uwjAE2U+qfcjOFE4wV0bzvHDRpnDI2vPSeK+lEcKSlQFd1TxS/IqCEIS/82tEs
+12798:gI2H+k2ha7eIsxdFziq3wgCJS3u78f4+Fha+nR7aggJ7sTgpvPH/MCpiNsqYHCd7
+12806:4tvaSUPtf4SQWBA1sJtR9EYqMRKU/0W9aKMszna3yOyuoQHn/et4dyi8eS+irTXy
+12807:VzlhUgwgbzPc18+as8gjVBoIYVrzTrXS+7rLdMMpbGsa8uCXyTqE2qM5K4JV
+12819:gmLPdedM2clOpvAHi6tLmDwFzPW021TXYzGQgS3Geo3lBKXTw05kfDJTenlIQf9a
+12823:+nINhC1XIvrNqwWi/rgZ1iXaDQ2fKgO+t7Tx6cZQPgHfutOKBCRHiZR+kVDVgATB
+12824:UCNCxrcsXbdS+jPA4qWCP6bzRxO5I7P5aNpBNjb+Id1aqNp4D2sTBk1uNiD+759V
+12832:LduCB85I5WoWrTEfMd8IwPhyyyC0/oIZK0OgEVtfu95FKwUSDau51FQTi7Ae3mEI
+12833:rzf1pCwHSmVY3OjHgpCmjH7iYP90o8cgVWuzitxn2B6RR7IzH4Io2scEVFfGDvJf
+12839:UYHjIQhUabNUxmDBaYUKv4

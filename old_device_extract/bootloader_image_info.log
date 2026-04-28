@@ -1,0 +1,34 @@
+Warning: DEPRECATED: 'esptool.py' is deprecated. Please use 'esptool' instead. The '.py' suffix will be removed in a future major release.
+esptool v5.2.0
+Image size: 28672 bytes
+Detected image type: ESP32
+
+ESP32 Image Header
+==================
+Image version: 1
+Entry point: 0x400805f0
+Segments: 3
+Flash size: 4MB
+Flash freq: 40m
+Flash mode: DIO
+
+ESP32 Extended Image Header
+===========================
+WP pin: 0xee (disabled)
+Flash pins drive settings: clk_drv: 0x0, q_drv: 0x0, d_drv: 0x0, cs0_drv: 0x0, hd_drv: 0x0, wp_drv: 0x0
+Chip ID: 0 (ESP32)
+Minimal chip revision: v0.0, (legacy min_rev = 0)
+Maximal chip revision: v655.35
+
+Segments Information
+====================
+Segment   Length   Load addr   File offs  Memory types
+-------  -------  ----------  ----------  ------------
+      0  0x00540  0x3fff0030  0x00000018  BYTE_ACCESSIBLE, DRAM, DIRAM_DRAM
+      1  0x03670  0x40078000  0x00000560  CACHE_APP
+      2  0x00e10  0x40080400  0x00003bd8  IRAM
+
+ESP32 Image Footer
+==================
+Checksum: 0x53 (valid)
+Validation hash: bf6dba4ae6f3865756606a8d3dbbde3b205c928d11ce5afea7a1437c070cbe01 (valid)
