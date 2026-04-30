@@ -342,9 +342,9 @@ BILL_ACCEPTOR_PULSE_IN <--------------------- U3 pin4 COLLECTOR
 
 В firmware GPIO33 назначен на два константы одновременно:
 - COIN_PULSE_OUTPUT_PIN = 33   (pulse_service управляет для монетных импульсов)
-- CASH_ACCEPTOR_CTRL_GPIO = 33 (cashAcceptorCtrlInit вызывается только в sniffer-режиме)
+- CASH_ACCEPTOR_CTRL_GPIO = 33 (локальные USB-команды cash_ctrl_* управляют этой линией)
 Физически это один и тот же GPIO и одна оптопара U4.
-В нормальном режиме (MDB_RX_ONLY_SNIFFER = 0) GPIO33 управляется исключительно pulse_service.
+В полной сборке GPIO33 может управляться pulse_service и локальными cash_ctrl_* командами.
 
 Логика U4:
 - GPIO33 Low  -> COIN_ACCEPTOR_PULSE_IN released -> Idle High

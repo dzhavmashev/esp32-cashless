@@ -180,7 +180,7 @@ class MachinePhy {
   void setFrameObserver(FrameObserver observer, void* context);
   // Регистрирует observer для статусов внутренней UART task.
   void setStatusObserver(StatusObserver observer, void* context);
-  // Запускает минимальный RX-only sniffer без UART/backend-логики.
+  // Запускает минимальный GPIO sniffer без UART/backend-логики.
   void beginSniffer(int rxPin, int txPin);
   // Принудительно переводит RX в raw-sniffer режим без UART-драйвера.
   esp_err_t debugForceRawSniffer();

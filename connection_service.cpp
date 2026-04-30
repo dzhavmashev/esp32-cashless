@@ -7,6 +7,16 @@
 
 ConnectionService* ConnectionService::instance_ = nullptr;
 
+namespace {
+constexpr bool kLogConnectionLifecycle = false;
+
+void logConnectionLifecycle(const String& line1, const String& line2 = "") {
+  if (kLogConnectionLifecycle) {
+    logMessage(line1, line2);
+  }
+}
+}  // namespace
+
 // Инициализирует сетевой стек и настраивает callback WebSocket-клиента.
 void ConnectionService::begin() {
   instance_ = this;
@@ -82,12 +92,12 @@ void ConnectionService::handleWebSocketEvent(WStype_t type, uint8_t* payload,
   switch (type) {
     case WStype_CONNECTED:
       websocketConnected_ = true;
-      logMessage("WebSocket connected", deviceId_);
+      logConnectionLifecycle("WebSocket connected", deviceId_);
       break;
     case WStype_DISCONNECTED:
       websocketConnected_ = false;
       clearWebSocketOutbox();
-      logMessage("WebSocket disconnected", deviceId_);
+      logConnectionLifecycle("WebSocket disconnected", deviceId_);
       break;
     case WStype_TEXT:
       if (messageHandler_ != nullptr) {
@@ -116,7 +126,7 @@ bool ConnectionService::connectToWifi() {
     if (!wifiConnected_) {
       wifiConnected_ = true;
       if (!wifiLogged_) {
-        logMessage("WiFi connected", localIpString());
+        logConnectionLifecycle("WiFi connected", localIpString());
         wifiLogged_ = true;
       }
     }
@@ -127,13 +137,13 @@ bool ConnectionService::connectToWifi() {
     wifiConnected_ = false;
     wifiLogged_ = false;
     websocketConnected_ = false;
-    logMessage("WiFi disconnected");
+    logConnectionLifecycle("WiFi disconnected");
   }
 
   const unsigned long now = millis();
   if (!wifiConnectStarted_ ||
       now - lastWifiConnectAttemptAt_ >= WIFI_CONNECT_TIMEOUT_MS) {
-    logMessage("Connecting WiFi", WIFI_SSID);
+    logConnectionLifecycle("Connecting WiFi", WIFI_SSID);
     WiFi.begin(WIFI_SSID, WIFI_PASSWORD, WIFI_CHANNEL);
     wifiConnectStarted_ = true;
     lastWifiConnectAttemptAt_ = now;
@@ -157,7 +167,7 @@ void ConnectionService::ensureWebSocketConnected() {
   }
 
   const String path = String(WEBSOCKET_PATH_PREFIX) + deviceId_;
-  logMessage("Connecting WebSocket", path);
+  logConnectionLifecycle("Connecting WebSocket", path);
   webSocket_.disconnect();
   clearWebSocketOutbox();
   webSocket_.begin(SERVER_HOST, SERVER_PORT, path);

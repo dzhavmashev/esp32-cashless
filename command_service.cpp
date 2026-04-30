@@ -8,7 +8,6 @@
 #include "ota_manager.h"
 #include "pulse_config_service.h"
 #include "pulse_service.h"
-#include "uart_service.h"
 
 namespace {
 constexpr bool kLogIncomingWsText = false;
@@ -52,11 +51,10 @@ bool isIgnorableTransportType(const String& messageType) {
 
 CommandService::CommandService(PulseService& pulseService, MdbService& mdbService,
                                PulseConfigService& pulseConfigService,
-                               UartService& uartService, OtaManager& otaService)
+                               OtaManager& otaService)
     : pulseService_(pulseService),
       mdbService_(mdbService),
       pulseConfigService_(pulseConfigService),
-      uartService_(uartService),
       otaService_(otaService) {}
 
 // Разбирает JSON-команду от backend и маршрутизирует её в нужный сервис.
@@ -125,16 +123,16 @@ void CommandService::handleTextMessage(const uint8_t* payload, size_t length) {
     }
 
     if (transport == "mdb") {
-      uartService_.deactivate();
       const String transactionId =
           String(payloadNode["payload"]["transaction_id"] | "");
-      mdbService_.requestCoinPayment(amountMinor, transactionId);
+      mdbService_.requestApproveCredit(amountMinor, transactionId);
       return;
     }
 
     if (transport == "uart") {
-      mdbService_.deactivate();
-      uartService_.requestPay(amountMinor);
+      mdbService_.emitControlEvent(
+          "command_rejected",
+          "{\"command\":\"pay\",\"reason\":\"uart_transport_disabled_mdb_only\"}");
       return;
     }
 
@@ -162,31 +160,26 @@ void CommandService::handleTextMessage(const uint8_t* payload, size_t length) {
   }
 
   if (command == "mdb_probe") {
-    uartService_.deactivate();
     mdbService_.requestProbe();
     return;
   }
 
   if (command == "mdb_irq_snapshot") {
-    uartService_.deactivate();
     mdbService_.requestIrqSnapshot();
     return;
   }
 
   if (command == "phy_decoder_status") {
-    uartService_.deactivate();
     mdbService_.requestPhyDecoderStatus();
     return;
   }
 
   if (command == "mdb_clear_session") {
-    uartService_.deactivate();
     mdbService_.requestClearSession();
     return;
   }
 
   if (command == "mdb_approve") {
-    uartService_.deactivate();
     const unsigned long amountMinor =
         payloadNode["payload"]["amount"].is<unsigned long>()
             ? payloadNode["payload"]["amount"].as<unsigned long>()
@@ -198,49 +191,41 @@ void CommandService::handleTextMessage(const uint8_t* payload, size_t length) {
   }
 
   if (command == "mdb_monitor_start") {
-    uartService_.deactivate();
     mdbService_.setMonitorEnabled(true);
     return;
   }
 
   if (command == "mdb_passive_sniff_on") {
-    uartService_.deactivate();
     mdbService_.setPassiveSniffEnabled(true);
     return;
   }
 
   if (command == "mdb_passive_sniff_off") {
-    uartService_.deactivate();
     mdbService_.setPassiveSniffEnabled(false);
     return;
   }
 
   if (command == "mdb_sniff_recent") {
-    uartService_.deactivate();
     mdbService_.requestSniffRecent();
     return;
   }
 
   if (command == "mdb_sniff_summary") {
-    uartService_.deactivate();
     mdbService_.requestSniffSummary();
     return;
   }
 
   if (command == "mdb_sniff_stats") {
-    uartService_.deactivate();
     mdbService_.requestSniffStats();
     return;
   }
 
   if (command == "mdb_sniff_clear") {
-    uartService_.deactivate();
     mdbService_.requestSniffClear();
     return;
   }
 
   if (command == "mdb_set_expected_address") {
-    uartService_.deactivate();
     const int address =
         payloadNode["payload"]["expected_address"].is<int>()
             ? payloadNode["payload"]["expected_address"].as<int>()
@@ -250,7 +235,6 @@ void CommandService::handleTextMessage(const uint8_t* payload, size_t length) {
   }
 
   if (command == "mdb_set_cashless_address") {
-    uartService_.deactivate();
     const int address =
         payloadNode["payload"]["cashless_address"].is<int>()
             ? payloadNode["payload"]["cashless_address"].as<int>()
@@ -260,7 +244,6 @@ void CommandService::handleTextMessage(const uint8_t* payload, size_t length) {
   }
 
   if (command == "mdb_gateway_profile") {
-    uartService_.deactivate();
     const int profileId =
         payloadNode["payload"]["profile_id"].is<int>()
             ? payloadNode["payload"]["profile_id"].as<int>()
@@ -271,7 +254,6 @@ void CommandService::handleTextMessage(const uint8_t* payload, size_t length) {
   }
 
   if (command == "mdb_setup_response_experiment") {
-    uartService_.deactivate();
     const bool enabled = payloadNode["payload"]["enabled"].is<bool>()
                              ? payloadNode["payload"]["enabled"].as<bool>()
                              : true;
@@ -302,25 +284,21 @@ void CommandService::handleTextMessage(const uint8_t* payload, size_t length) {
 
 
   if (command == "mdb_experiment_enable") {
-    uartService_.deactivate();
     mdbService_.setExperimentEnabled(true);
     return;
   }
 
   if (command == "mdb_experiment_disable") {
-    uartService_.deactivate();
     mdbService_.setExperimentEnabled(false);
     return;
   }
 
   if (command == "mdb_experiment_fire_once") {
-    uartService_.deactivate();
     mdbService_.requestExperimentFireOnce();
     return;
   }
 
   if (command == "mdb_experiment_configure") {
-    uartService_.deactivate();
     const uint8_t expectedAddress =
         payloadNode["payload"]["expected_address"].is<int>()
             ? static_cast<uint8_t>(
@@ -390,7 +368,6 @@ void CommandService::handleTextMessage(const uint8_t* payload, size_t length) {
   }
 
   if (command == "mdb_credit_flow_start") {
-    uartService_.deactivate();
     const unsigned long amountMinor =
         payloadNode["payload"]["amount_minor"].is<unsigned long>()
             ? payloadNode["payload"]["amount_minor"].as<unsigned long>()
@@ -401,13 +378,11 @@ void CommandService::handleTextMessage(const uint8_t* payload, size_t length) {
   }
 
   if (command == "mdb_credit_flow_stop") {
-    uartService_.deactivate();
     mdbService_.stopCreditFlowStrategy();
     return;
   }
 
   if (command == "mdb_experiment_configure_protocol_probe") {
-    uartService_.deactivate();
     const uint8_t expectedAddress =
         payloadNode["payload"]["expected_address"].is<int>()
             ? static_cast<uint8_t>(
@@ -458,82 +433,53 @@ void CommandService::handleTextMessage(const uint8_t* payload, size_t length) {
   }
 
   if (command == "mdb_experiment_run_protocol_probe_once") {
-    uartService_.deactivate();
     mdbService_.requestExperimentFireOnce();
     return;
   }
 
   if (command == "mdb_probe_tx") {
-    uartService_.deactivate();
     mdbService_.requestProbeTx();
     return;
   }
 
   if (command == "mdb_rx_invert_on") {
-    uartService_.deactivate();
     mdbService_.setRxInvertEnabled(true);
     return;
   }
 
   if (command == "mdb_rx_invert_off") {
-    uartService_.deactivate();
     mdbService_.setRxInvertEnabled(false);
     return;
   }
 
   if (command == "mdb_pulse_test") {
-    uartService_.deactivate();
     mdbService_.requestPulseTest();
     return;
   }
 
   if (command == "mdb_tx_hold_low_test") {
-    uartService_.deactivate();
     mdbService_.requestHoldTxLowTest();
     return;
   }
 
   if (command == "mdb_monitor_stop") {
-    uartService_.deactivate();
     mdbService_.setMonitorEnabled(false);
     return;
   }
 
   if (command == "mdb_raw_send") {
-    uartService_.deactivate();
     const char* hexPayload = payloadNode["payload"]["hex"] | "";
     mdbService_.sendRawHex(String(hexPayload));
     return;
   }
 
-  if (command == "uart_probe") {
-    mdbService_.deactivate();
-    uartService_.requestProbe();
-    return;
-  }
-
-  if (command == "uart_monitor_start") {
-    mdbService_.deactivate();
-    uartService_.setMonitorEnabled(true);
-    return;
-  }
-
-  if (command == "uart_monitor_stop") {
-    mdbService_.deactivate();
-    uartService_.setMonitorEnabled(false);
-    return;
-  }
-
-  if (command == "uart_probe_tx") {
-    mdbService_.deactivate();
-    uartService_.requestProbeTx();
-    return;
-  }
-
-  if (command == "uart_raw_send") {
-    mdbService_.deactivate();
-    const char* hexPayload = payloadNode["payload"]["hex"] | "";
-    uartService_.sendRawHex(String(hexPayload));
+  if (command == "uart_probe" || command == "uart_monitor_start" ||
+      command == "uart_monitor_stop" || command == "uart_probe_tx" ||
+      command == "uart_raw_send") {
+    mdbService_.emitControlEvent(
+        "command_rejected",
+        String("{\"command\":\"") + command +
+            "\",\"reason\":\"uart_service_disabled_mdb_only\"}");
     return;
   }
 

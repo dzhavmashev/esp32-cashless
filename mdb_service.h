@@ -204,7 +204,7 @@ class MdbService {
   // Сохраняет новый платёж как pending.
   void requestRecordPayment(unsigned long amountMinor,
                             const String& transactionId = "");
-  // Ставит платёж в очередь для выдачи через coin changer emulator.
+  // Заглушка coin changer MDB path: в текущем режиме работаем только как cashless.
   void requestCoinPayment(unsigned long amountMinor,
                           const String& transactionId = "");
   // Переводит pending-платёж в активный кредит.
@@ -535,6 +535,9 @@ class MdbService {
   // Реакция на кадр сразу при его финализации в PHY.
   void handleFastFrameObserved(const machine::Frame& frame,
                                unsigned long finalizedAtMs);
+  // Быстрый ACK для текущего startup RESET, который ESP временно видит как FE/FC.
+  bool sendCompatMisdecodedResetAck(unsigned long rxEndedUs, unsigned long now,
+                                    const char* responseReason);
   // Сбрасывает runtime-состояние coin changer protocol.
   void resetCoinChangerProtocolState(bool justResetPending);
   // Очищает очередь активного coin-платежа.
@@ -702,7 +705,7 @@ class MdbService {
   CashlessSession session_;
   volatile bool active_ = true;
   bool monitorEnabled_ = false;
-  bool passiveSniffEnabled_ = true;
+  bool passiveSniffEnabled_ = false;
   bool rxInvertEnabled_ = false;
   ExperimentMode experimentMode_ = ExperimentMode::PassiveOnly;
   ExperimentConfig experimentConfig_ = {};

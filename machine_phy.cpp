@@ -38,7 +38,7 @@ constexpr unsigned long kDecoderIdleStableUs = (kMdbBitUs * 3UL) / 4UL;
 constexpr unsigned long kDecoderPolarityMismatchUs = kMdbBitUs * 4UL;
 constexpr unsigned long kDecoderFrameSpanUs = kMdbBitUs * 11UL;
 constexpr unsigned long kDecoderFrameFinalizeUs = kDecoderFrameSpanUs + kMdbHalfBitUs;
-constexpr unsigned long kDecoderTimingDriftUs = 24UL;
+constexpr unsigned long kDecoderTimingDriftUs = 48UL;
 constexpr unsigned long kDecoderTooCloseEdgeUs = 12UL;
 constexpr int32_t kDecoderPhaseAdjustWindowUs = 18;
 constexpr int32_t kDecoderMaxPhaseCorrectionUs = 18;
@@ -1190,6 +1190,15 @@ void MachinePhy::processDecoderEdge(unsigned long tsUs, uint8_t rawLevel,
               : DecoderTraceEdgeDecision::Duplicate;
       appendCurrentCandidateTraceEdgeLocked(
           tsUs, normalizedLevel, ringIndex, rejectionDecision);
+    } else if (candidateEdgeCount_ == 1 &&
+               normalizedLevel == candidateInitialLevelBeforeStart_ &&
+               candidateStartUs_ != 0 &&
+               (tsUs - candidateStartUs_) < kMdbBitUs) {
+      // Start-bit bounce: the line returned to the pre-start idle level within
+      // one bit period while no data-bit edges have been accepted yet.
+      // This is RC/capacitance ringing on the RX line, not a real data edge.
+      appendCurrentCandidateTraceEdgeLocked(
+          tsUs, normalizedLevel, ringIndex, DecoderTraceEdgeDecision::TooClose);
     } else {
       const int32_t correctedDeltaUs =
           static_cast<int32_t>(tsUs - candidateStartUs_) - candidatePhaseCorrectionUs_;
@@ -1647,24 +1656,26 @@ void MachinePhy::appendReceivedByte(uint8_t value, bool modeBit,
   }
   lastRxByteAt_ = byteNowMs;
   lastRxByteAtUs_ = byteNowUs;
-  if (!hasReadyFrame_ && rxLength_ == 2 && rxBuffer_[0].highBit) {
+  if (rxLength_ == 2 && rxBuffer_[0].highBit) {
     const uint8_t commandByte = rxBuffer_[0].value7;
     const uint8_t checksumByte = rxBuffer_[1].value7;
     const uint8_t address = commandByte >> 3U;
     const uint8_t command = commandByte & 0x07U;
-    finalizeImmediate =
-        address == 2U &&
-        (command == 0U || (command == 2U && checksumByte == commandByte));
+    // RESET (cmd=0) must always be handled immediately so ACK is sent within
+    // the MDB 5ms response window regardless of pending ready frame state.
+    // POLL (cmd=2) also gets the fast path but only when no frame is pending.
+    const bool isReset = address == 2U && command == 0U;
+    const bool isPoll =
+        address == 2U && command == 2U && checksumByte == commandByte;
+    finalizeImmediate = isReset || (!hasReadyFrame_ && isPoll);
     if (finalizeImmediate) {
       immediateRaw[0] = rxBuffer_[0];
       immediateRaw[1] = rxBuffer_[1];
       storeImmediateFrame = !hasReadyFrame_;
-      if (!storeImmediateFrame) {
-        rxLength_ = 0;
-        frameOverflowed_ = false;
-        lastFrameEndedAt_ = byteNowMs;
-        currentFrameGapBeforeMs_ = frameGapMs_;
-      }
+      rxLength_ = 0;
+      frameOverflowed_ = false;
+      lastFrameEndedAt_ = byteNowMs;
+      currentFrameGapBeforeMs_ = frameGapMs_;
     }
   }
   portEXIT_CRITICAL(&stateLock_);
@@ -1808,15 +1819,10 @@ unsigned long MachinePhy::write(const uint8_t* data, size_t length) {
   const uint32_t frameId = ++txFrameCounter_;
   unsigned long firstTxUs = 0;
   for (size_t i = 0; i < length; ++i) {
-    // MDB cashless slave response: every byte is sent as a data byte
-    // (mode/address bit = 0). The old behavior incorrectly marked the last
-    // byte of the frame with ninthBit=1, which makes the checksum/status byte
-    // look like an address/mode byte to the VMC.
-    // MDB peripheral/slave data block:
-    // payload bytes have mode/ninth bit = 0,
-    // the final checksum/end byte has mode/ninth bit = 1.
-    const uint8_t ninthBit = (i + 1U == length) ? 1U : 0U;
-    const unsigned long txUs = writeSlaveByte(frameId, i, data[i], ninthBit);
+    // MDB peripheral responses are data bytes; the master owns address/mode
+    // bytes on the bus. Keep the 9th bit low for ACK, status, payload, and
+    // checksum bytes.
+    const unsigned long txUs = writeSlaveByte(frameId, i, data[i], 0U);
     if (firstTxUs == 0 && txUs != 0) {
       firstTxUs = txUs;
     }
@@ -1849,14 +1855,23 @@ unsigned long MachinePhy::txCharacterUs() const {
 
 unsigned long MachinePhy::writeSlaveByte(uint32_t frameId, size_t byteIndex,
                                          uint8_t value, uint8_t ninthBit) {
+  const uint8_t requestedNinthBit = ninthBit != 0U ? 1U : 0U;
+  const uint8_t physicalNinthBit =
+      kMdbTxParityBitInvert ? static_cast<uint8_t>(requestedNinthBit ^ 0x01U)
+                            : requestedNinthBit;
   uart_set_parity(kMachineUartNum,
-                  ninthBit != 0 ? parityForNinthBitOne(value)
-                                : parityForNinthBitZero(value));
+                  physicalNinthBit != 0U ? parityForNinthBitOne(value)
+                                         : parityForNinthBitZero(value));
   const unsigned long txUs = micros();
   uart_write_bytes(kMachineUartNum, reinterpret_cast<const char*>(&value), 1);
-  delayMicroseconds(static_cast<unsigned int>(kMdbCharacterTxUs));
+  const esp_err_t waitResult =
+      uart_wait_tx_done(kMachineUartNum, pdMS_TO_TICKS(4));
+  if (waitResult != ESP_OK) {
+    delayMicroseconds(static_cast<unsigned int>(kMdbCharacterTxUs));
+  }
   if (txObserver_ != nullptr) {
-    txObserver_(txObserverContext_, frameId, byteIndex, value, ninthBit, txUs);
+    txObserver_(txObserverContext_, frameId, byteIndex, value, requestedNinthBit,
+                txUs);
   }
   return txUs;
 }

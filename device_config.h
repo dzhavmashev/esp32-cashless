@@ -25,10 +25,6 @@ constexpr int COIN_PULSE_OUTPUT_PIN = 33;
 constexpr int PULSE_OUTPUT_PIN = COIN_PULSE_OUTPUT_PIN;
 constexpr int MDB_RX_PIN = 14;
 constexpr int MDB_TX_PIN = 19;
-constexpr unsigned long MDB_BAUD_RATE = 9600;
-constexpr unsigned long MDB_FRAME_GAP_MS = 20;
-constexpr bool MDB_RX_INVERT = true;
-constexpr bool MDB_TX_INVERT = true;
 constexpr unsigned long UART_BAUD_RATE = 9600;
 constexpr unsigned long UART_FRAME_GAP_MS = 20;
 constexpr unsigned long WIFI_LED_BLINK_INTERVAL_MS = 250;
@@ -55,5 +51,4 @@ constexpr unsigned long REQUEST_INTERVAL_MS = 3000;
 constexpr int CASH_ACCEPTOR_CTRL_GPIO = 33;
 constexpr bool CASH_ACCEPTOR_CTRL_ENABLED = true;
 constexpr bool CASH_ACCEPTOR_CTRL_ACTIVE_HIGH = true;
-constexpr uint32_t CASH_ACCEPTOR_CTRL_BOOT_SETTLE_MS = 1500;
-
+constexpr uint32_t CASH_ACCEPTOR_CTRL_BOOT_SETTLE_MS = 0;
