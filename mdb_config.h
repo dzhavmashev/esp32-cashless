@@ -27,13 +27,13 @@ constexpr bool kMdbCoinChangerEnabled = false;
 // Старый бинарник подтвердил cashless raw address 0x10; inversion в нём не
 // раскрыта, поэтому полярность хранится здесь как единый переключатель PHY.
 constexpr unsigned long kMdbBaudRate = 9600;
-constexpr unsigned long kMdbFrameGapMs = 20;
-constexpr bool kMdbRxInvert = true;
+constexpr unsigned long kMdbFrameGapMs = 0;
+constexpr bool kMdbRxInvert = false;
 constexpr bool kMdbTxInvert = true;
 // Arduino sniffer on U2 pin6 showed the physical mode/parity bit inverted
 // relative to the requested TX ninthBit. Keep this correction in config so the
 // logical MDB ninthBit requested by MachinePhy matches the line observed by VMC.
-constexpr bool kMdbTxParityBitInvert = true;
+constexpr bool kMdbTxParityBitInvert = false;
 
 // Cashless EXPANSION ID profile. 12-byte reader id found in the old firmware.
 // The old binary also contains "VN2600RU", but the current MDB cashless
@@ -69,7 +69,22 @@ constexpr uint8_t kMdbCoinChangerScalingFactor = 0x64;
 constexpr uint8_t kMdbCoinChangerDecimalPlaces = 0x02;
 constexpr uint16_t kMdbCoinChangerRoutingMask = 0x0000;
 constexpr uint8_t kMdbCoinChangerCoinCredits[16] = {
-    1, 5, 10, 50, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+    1,
+    5,
+    10,
+    50,
+    100,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
 };
 constexpr char kMdbCoinChangerManufacturer[] = "MEI";
 constexpr char kMdbCoinChangerSerial[] = "3769G600351 ";
