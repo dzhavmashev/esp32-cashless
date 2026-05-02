@@ -66,11 +66,12 @@ namespace
   constexpr uint8_t kCashlessExpansionIdSubcommand = 0x00;
   constexpr uint8_t kCashlessReaderControlSubcommand = 0x01;
   constexpr uint8_t kCashlessLevel = 0x03;
-  // Cashless Currency/Country Code aligned with the active coin changer profile.
-  constexpr uint8_t kCashlessCurrencyCountryCodeHi = 0x14;
-  constexpr uint8_t kCashlessCurrencyCountryCodeLo = 0x17;
-  constexpr uint8_t kGatewayTelephoneCurrencyCountryCodeHi = 0x09;
-  constexpr uint8_t kGatewayTelephoneCurrencyCountryCodeLo = 0x96;
+  // Legacy decompiled firmware uses 16 43 in both 0x08 setup and 0x30 setup.
+  // Do not replace the active profile with 14 17 until VMC accepts handshake.
+  constexpr uint8_t kCashlessCurrencyCountryCodeHi = 0x16;
+  constexpr uint8_t kCashlessCurrencyCountryCodeLo = 0x43;
+  constexpr uint8_t kGatewayAltKgsCurrencyCountryCodeHi = 0x14;
+  constexpr uint8_t kGatewayAltKgsCurrencyCountryCodeLo = 0x17;
   constexpr uint8_t kCashlessAppMaxResponseTime = 0x1E;
   constexpr unsigned long kCreditFlowObservationWindowMs = 5000;
   constexpr unsigned long kCashlessSplitContinuationWindowUs = 8000;
@@ -113,40 +114,40 @@ namespace
 
   constexpr GatewayCompatProfileConfig kGatewayCompatProfileDefaultV0 = {
       0,
-      "gateway_default_v0_kgs",
-      "kgs_1417",
+      "gateway_default_v0_legacy1643",
+      "legacy_1643",
       kCashlessAppMaxResponseTime, // responseTime = 30 seconds
       0x09,
       kCashlessCurrencyCountryCodeHi,
       kCashlessCurrencyCountryCodeLo,
-      "coin_profile_currency_1417",
+      "legacy_cashless_compat_1643",
       "options_and_response_time",
       false,
   };
 
   constexpr GatewayCompatProfileConfig kGatewayCompatProfileAlt1 = {
       1,
-      "gateway_repo_like_alt1_kgs_rt30_opt08",
-      "kgs_1417",
+      "gateway_repo_like_alt1_legacy1643_rt30_opt08",
+      "legacy_1643",
       kCashlessAppMaxResponseTime, // 0x1E = 30 seconds
       0x08,
       kCashlessCurrencyCountryCodeHi,
       kCashlessCurrencyCountryCodeLo,
-      "coin_profile_currency_1417",
+      "legacy_cashless_compat_1643",
       "options_and_response_time",
       false,
   };
 
-  constexpr GatewayCompatProfileConfig kGatewayCompatProfileAlt2Currency = {
+  constexpr GatewayCompatProfileConfig kGatewayCompatProfileAlt2Kgs = {
       2,
-      "gateway_repo_like_alt2_currency",
-      "kgs_telephone_bcd_0996",
-      0x03,
-      0x09,
-      kGatewayTelephoneCurrencyCountryCodeHi,
-      kGatewayTelephoneCurrencyCountryCodeLo,
-      "telephone_country_code_packed_bcd",
-      "currency_country_code_encoding_mode",
+      "gateway_alt_kgs1417_rt30_opt08",
+      "kgs_1417",
+      kCashlessAppMaxResponseTime,
+      0x08,
+      kGatewayAltKgsCurrencyCountryCodeHi,
+      kGatewayAltKgsCurrencyCountryCodeLo,
+      "iso4217_kgs_1417",
+      "experimental_currency_country_code",
       true,
   };
 
@@ -155,7 +156,7 @@ namespace
     switch (profileId)
     {
     case 2:
-      return kGatewayCompatProfileAlt2Currency;
+      return kGatewayCompatProfileAlt2Kgs;
     case 1:
       return kGatewayCompatProfileAlt1;
     case 0:
@@ -211,8 +212,8 @@ namespace
   };
 
   constexpr SetupResponseVariant kSetupResponseVariants[] = {
-      {kCashlessCurrencyCountryCodeHi, kCashlessCurrencyCountryCodeLo,
-       kCashlessAppMaxResponseTime, 0x08, "kgs_1417_rt30_opt08"},
+      {kGatewayAltKgsCurrencyCountryCodeHi, kGatewayAltKgsCurrencyCountryCodeLo,
+       kCashlessAppMaxResponseTime, 0x08, "gateway_alt_kgs1417_rt30_opt08"},
   };
 
   constexpr uint8_t kSetupResponseVariantCount =
@@ -12541,7 +12542,14 @@ unsigned long MdbService::sendReaderSetupResponse(unsigned long rxEndedUs,
             ",\"expected_checksum\":\"" + byteToHex(expectedChecksum) +
             "\",\"length\":" + length +
             ",\"format\":\"" + setupResponseFormat +
-            "\",\"logged_after_tx\":true" +
+            "\",\"currency_profile\":\"" +
+            escapeForJson(gatewayCurrencyCountryCodeProfileId_) +
+            "\",\"options\":\"" + byteToHex(options) +
+            "\",\"options_value\":" + static_cast<unsigned int>(options) +
+            ",\"response_time\":\"" + byteToHex(responseTime) +
+            "\",\"response_time_value\":" +
+            static_cast<unsigned int>(responseTime) +
+            ",\"logged_after_tx\":true" +
             ",\"tx_ts_us\":" + firstTxUs +
             ",\"reply_delay_us\":" + lastSetupResponseReplyDelayUs_ + "}");
   }
