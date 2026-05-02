@@ -49,13 +49,13 @@ namespace
   constexpr uint8_t kCashlessSetupMaxMinSubcommand = 0x01;
   constexpr uint8_t kCashlessExpansionIdSubcommand = 0x00;
   constexpr uint8_t kCashlessReaderControlSubcommand = 0x01;
-  constexpr uint8_t kCashlessLevel = 0x01;
+  constexpr uint8_t kCashlessLevel = 0x03;
   // MDB Currency/Country Code for Kyrgyzstani som (KGS), ISO 4217 = 417 decimal = 0x14 0x17.
-  constexpr uint8_t kCashlessCurrencyCountryCodeHi = 0x14;
-  constexpr uint8_t kCashlessCurrencyCountryCodeLo = 0x17;
+  constexpr uint8_t kCashlessCurrencyCountryCodeHi = 0x16;
+  constexpr uint8_t kCashlessCurrencyCountryCodeLo = 0x43;
   constexpr uint8_t kGatewayTelephoneCurrencyCountryCodeHi = 0x09;
   constexpr uint8_t kGatewayTelephoneCurrencyCountryCodeLo = 0x96;
-  constexpr uint8_t kCashlessAppMaxResponseTime = 0x01;
+  constexpr uint8_t kCashlessAppMaxResponseTime = 0x1E;
   constexpr unsigned long kCreditFlowObservationWindowMs = 5000;
   constexpr unsigned long kCashlessSplitContinuationWindowUs = 8000;
   constexpr size_t kObservedRawStatusWindowBytes = 8;
@@ -97,27 +97,27 @@ namespace
 
   constexpr GatewayCompatProfileConfig kGatewayCompatProfileDefaultV0 = {
       0,
-      "gateway_default_v0",
-      "kgs_iso4217_bcd_1417",
-      kCashlessAppMaxResponseTime,
-      0x00,
+      "gateway_default_v0_rub",
+      "rub_bcd_1643",
+      kCashlessAppMaxResponseTime, // responseTime = 30 seconds
+      0x09,
       kCashlessCurrencyCountryCodeHi,
       kCashlessCurrencyCountryCodeLo,
-      "iso4217_numeric_packed_bcd",
+      "rub_numeric_packed_bcd",
       "options_and_response_time",
       false,
   };
 
   constexpr GatewayCompatProfileConfig kGatewayCompatProfileAlt1 = {
       1,
-      "gateway_repo_like_alt1",
-      "kgs_iso4217_bcd_1417",
-      0x03,
-      0x09,
+      "gateway_repo_like_alt1_rub_rt30_opt08",
+      "rub_bcd_1643",
+      kCashlessAppMaxResponseTime, // 0x1E = 30 seconds
+      0x08,
       kCashlessCurrencyCountryCodeHi,
       kCashlessCurrencyCountryCodeLo,
-      "iso4217_numeric_packed_bcd",
-      "currency_code_encoding",
+      "rub_numeric_packed_bcd",
+      "options_and_response_time",
       false,
   };
 
@@ -154,7 +154,8 @@ namespace
     {
       return kGatewayCompatForcedProfileId;
     }
-    return 0;
+
+    return profileId <= 2 ? profileId : 0;
   }
 
   String byteToHex(uint8_t value);
@@ -182,6 +183,23 @@ namespace
   constexpr uint8_t kObservedGatewayExpansionByte = 0x19;
   constexpr uint8_t kObservedGatewayExpansionPayload1 = 0x01;
   constexpr uint8_t kObservedGatewayExpansionChecksum = 0x1A;
+
+  struct SetupResponseVariant
+  {
+    uint8_t currencyCountryCodeHi;
+    uint8_t currencyCountryCodeLo;
+    uint8_t responseTime;
+    uint8_t options;
+    const char *label;
+  };
+
+  constexpr SetupResponseVariant kSetupResponseVariants[] = {
+      {0x16, 0x43, kCashlessAppMaxResponseTime, 0x08, "rub_1643_rt30_opt08"},
+  };
+
+  constexpr uint8_t kSetupResponseVariantCount =
+      static_cast<uint8_t>(sizeof(kSetupResponseVariants) /
+                           sizeof(kSetupResponseVariants[0]));
   constexpr uint8_t kCoinCompatTailByteA = 0xFC;
   constexpr uint8_t kCoinCompatTailByteB = 0x7C;
   constexpr uint8_t kCoinCompatTailByteC = 0x1C;
@@ -200,6 +218,18 @@ namespace
   constexpr unsigned long kCompatMisdecodedResetFirstByteDelayUs = 1400UL;
   constexpr bool kCompatMisdecodedResetFirstByteAckEnabled = false;
   constexpr bool kLogEveryPoll = false;
+
+  constexpr bool kPostEnableExpansionProbeEnabled = false;
+  constexpr unsigned long kPostEnableExpansionProbeDelayMs = 5UL;
+  constexpr uint8_t kPostEnableExpansionProbeMaxPerBoot = 3;
+
+  // Diagnostic probe: the observed gateway sends a single-byte 0x1C after
+  // reader config. ACK and no-response both lead to reset/no POLL.
+  // For this test, answer compact 0x1C with RET (0xFF) and observe whether
+  // VMC retries, sends a wrapper continuation, or resets.
+  // Full reader-control frames with payload are still ACKed normally.
+  constexpr bool kCompactReaderControlRetProbeEnabled = true;
+
   constexpr bool kLogEveryStateTransition = false;
   constexpr bool kLogEveryResponseDecision = false;
   constexpr bool kLogGatewaySetupCompatTrace = false;
@@ -213,7 +243,8 @@ namespace
   constexpr bool kEmitCashlessHotPathEvents = false;
   constexpr bool kEmitAcceptedRxTraceEvents = false;
   constexpr bool kEmitDialogueTraceEvents = false;
-  constexpr bool kForceCompactProbeDebug = true;
+  constexpr bool kForceCompactProbeDebug = false;
+  constexpr bool kEmitSetupResponseFrameBuiltEvent = true;
 
   bool isProbeDebugEventType(const char *eventType)
   {
@@ -252,6 +283,13 @@ namespace
 
     const uint8_t first = frame.normalized[0];
     if (first != 0xFEU && first != 0xFCU)
+    {
+      return false;
+    }
+    // 0xFE is also used as the coin changer compat poll byte (VMC sends it as
+    // MDB addr=31 cmd=6 with 9th bit set). When coin changer is enabled, let
+    // the compat poll handler take it instead of treating it as a reset misdecode.
+    if (first == kObservedCoinChangerPollByte && kMdbCoinChangerEnabled)
     {
       return false;
     }
@@ -947,6 +985,10 @@ void MdbService::begin()
   experimentObservedPostFamilies_ = "";
   resetCoinChangerProtocolState(true);
   clearCoinChangerPendingPayment();
+  if (kMdbBootAsCoinChanger)
+  {
+    mdbOperatingMode_ = MdbOperatingMode::CoinChanger;
+  }
   isReaderEnabled_ = false;
   cashlessJustResetPending_ = true;
   cashlessSetupSeen_ = false;
@@ -1051,6 +1093,11 @@ void MdbService::begin()
   beginSessionPending_ = false;
   beginSessionAmountMinor_ = 0;
   beginSessionAwaitingAck_ = false;
+
+  postEnableExpansionProbePending_ = false;
+  postEnableExpansionProbeAtMs_ = 0;
+  postEnableExpansionProbeCount_ = 0;
+
   beginSessionTxCount_ = 0;
   beginSessionAckCount_ = 0;
   lastBeginSessionTxUs_ = 0;
@@ -1248,8 +1295,15 @@ MdbService::DialogueKind MdbService::classifyRxFrameKind(
     if (frame.checksumValid &&
         frame.candidateCommand == kCashlessReaderControlCommand &&
         frame.normalizedLength == 1 &&
-        (readerState_ == ReaderState::ExpansionPending ||
-         readerState_ == ReaderState::Disabled))
+        (readerState_ == ReaderState::SetupSeen ||
+         readerState_ == ReaderState::SetupResponded ||
+         readerState_ == ReaderState::ExpansionPending ||
+         readerState_ == ReaderState::Disabled ||
+         currentSetupResponseGatewayCompat_ ||
+         wrapperFsmState_ == WrapperFsmState::SetupConfigSeen ||
+         wrapperFsmState_ == WrapperFsmState::ReaderConfigSent ||
+         wrapperFsmState_ == WrapperFsmState::WaitingForContinuation ||
+         wrapperFsmState_ == WrapperFsmState::ContinuationTimeout))
     {
       return DialogueKind::Enable;
     }
@@ -1260,7 +1314,7 @@ MdbService::DialogueKind MdbService::classifyRxFrameKind(
 bool MdbService::matchesCashlessDialogueAddress(uint8_t address,
                                                 uint8_t command) const
 {
-  if (!kMdbCashlessEnabled)
+  if (!kMdbCashlessEnabled || mdbOperatingMode_ != MdbOperatingMode::Cashless)
   {
     return false;
   }
@@ -1277,12 +1331,17 @@ bool MdbService::matchesCashlessDialogueAddress(uint8_t address,
   }
 
   const bool followupPhase =
+      readerState_ == ReaderState::SetupSeen ||
+      readerState_ == ReaderState::SetupResponded ||
       readerState_ == ReaderState::ExpansionPending ||
       readerState_ == ReaderState::Disabled ||
       readerState_ == ReaderState::Enabled ||
       readerState_ == ReaderState::PollActive ||
       readerState_ == ReaderState::SessionIdle ||
-      readerState_ == ReaderState::SessionActive;
+      readerState_ == ReaderState::SessionActive ||
+      wrapperFsmState_ == WrapperFsmState::ReaderConfigSent ||
+      wrapperFsmState_ == WrapperFsmState::WaitingForContinuation;
+
   if (!followupPhase)
   {
     return false;
@@ -1297,7 +1356,8 @@ bool MdbService::matchesCashlessDialogueAddress(uint8_t address,
 bool MdbService::matchesCoinChangerDialogueAddress(uint8_t address,
                                                    uint8_t command) const
 {
-  if (!kMdbCoinChangerEnabled || address != kMdbCoinChangerAddress)
+  if (!kMdbCoinChangerEnabled || mdbOperatingMode_ != MdbOperatingMode::CoinChanger ||
+      address != kMdbCoinChangerAddress)
   {
     return false;
   }
@@ -2367,13 +2427,60 @@ void MdbService::noteGatewayCompatFollowup(const machine::Frame &frame,
   }
 
   const String frameHex = machine::normalizedHex(frame);
+  const String rawHex = machine::rawHex(frame);
+  const unsigned long followupDeltaUs =
+      frame.endedAtUs - gatewayCompatLastSetupResponseUs_;
+
+  const bool firstNinthBit =
+      frame.normalizedLength > 0 ? frame.hasHighBit : false;
+
+  const uint16_t firstRaw9 =
+      frame.normalizedLength > 0
+          ? raw9Word(frame.normalized[0], firstNinthBit)
+          : 0;
+
+  const uint8_t firstDataByte =
+      frame.normalizedLength > 0 ? frame.normalized[0] : 0;
+
+  const String unknownReason = buildUnknownRxReason(frame);
+  const String tentativeKind = buildUnknownTentativeKind(frame);
+  const String setupVariant = buildSetupVariantLabel(frame);
+  const String setupClassificationReason = buildSetupClassificationReason(frame);
+
+  const String frameSnapshotJson =
+      String(",\"frame_hex\":\"") + escapeForJson(frameHex) +
+      "\",\"raw_hex\":\"" + escapeForJson(rawHex) +
+      "\",\"has_candidate_address\":" +
+      boolToJson(frame.hasCandidateAddress) +
+      ",\"candidate_address\":" +
+      (frame.hasCandidateAddress
+           ? String(static_cast<unsigned int>(frame.candidateAddress))
+           : String(-1)) +
+      ",\"candidate_command\":" +
+      (frame.hasCandidateAddress
+           ? String(static_cast<unsigned int>(frame.candidateCommand))
+           : String(-1)) +
+      ",\"checksum_valid\":" + boolToJson(frame.checksumValid) +
+      ",\"length\":" + frame.length +
+      ",\"normalized_length\":" + frame.normalizedLength +
+      ",\"has_high_bit\":" + boolToJson(frame.hasHighBit) +
+      ",\"first_raw9\":" + firstRaw9 +
+      ",\"first_data_byte\":" +
+      static_cast<unsigned int>(firstDataByte) +
+      ",\"first_ninth_bit\":" + boolToJson(firstNinthBit) +
+      ",\"unknown_reason\":\"" + escapeForJson(unknownReason) +
+      "\",\"tentative_kind\":\"" + escapeForJson(tentativeKind) +
+      "\",\"setup_variant\":\"" + escapeForJson(setupVariant) +
+      "\",\"setup_classification_reason\":\"" +
+      escapeForJson(setupClassificationReason) + "\"";
+
   String followupKind;
   String interpretation;
   bool captureAsContinuation = true;
 
   if (kind == DialogueKind::Setup)
   {
-    const String variant = buildSetupVariantLabel(frame);
+    const String variant = setupVariant;
     if (variant == "SETUP_MAX_MIN_PRICE")
     {
       followupKind = "setup_max_min";
@@ -2459,7 +2566,7 @@ void MdbService::noteGatewayCompatFollowup(const machine::Frame &frame,
     }
   }
   else if (kind == DialogueKind::Unknown &&
-           buildUnknownRxReason(frame).startsWith("foreign_address_"))
+           unknownReason.startsWith("foreign_address_"))
   {
     followupKind = "foreign_traffic";
     interpretation = "wrapper_unknown_continuation";
@@ -2493,20 +2600,26 @@ void MdbService::noteGatewayCompatFollowup(const machine::Frame &frame,
     gatewayCompatBusAliveAfterSetup_ = true;
     emitEvent("gateway_compat_non_continuation_observed",
               String("{\"timestamp_us\":") + frame.endedAtUs +
+                  ",\"delta_us\":" + followupDeltaUs +
                   ",\"kind\":\"" + escapeForJson(followupKind) +
+                  "\",\"dialogue_kind\":\"" +
+                  escapeForJson(dialogueKindLabel(kind)) +
                   "\",\"interpretation\":\"" + escapeForJson(interpretation) +
                   "\",\"wrapper_phase\":\"" +
                   escapeForJson(gatewayWrapperPhaseLabel()) +
+                  "\",\"wrapper_fsm_state\":\"" +
+                  escapeForJson(wrapperFsmStateLabel(wrapperFsmState_)) +
                   "\",\"wrapper_expected_next_rx_kind\":\"" +
-                  escapeForJson(wrapperExpectedNextRxKindLabel()) + "\"}");
+                  escapeForJson(wrapperExpectedNextRxKindLabel()) +
+                  "\"" + frameSnapshotJson + "}");
     return;
   }
 
   gatewayCompatFirstFollowupCaptured_ = true;
   gatewayCompatFollowupActive_ = false;
   firstFollowupKindAfterSetup_ = followupKind;
-  firstFollowupRaw9AfterSetup_ = lastAcceptedRxFrame_.raw9;
-  firstFollowupDeltaUs_ = frame.endedAtUs - gatewayCompatLastSetupResponseUs_;
+  firstFollowupRaw9AfterSetup_ = firstRaw9;
+  firstFollowupDeltaUs_ = followupDeltaUs;
   firstFollowupInterpretation_ = interpretation;
   gatewayCompatLastOutcome_ = followupKind;
   gatewayCompatRetryInterpretation_ = interpretation;
@@ -2550,8 +2663,11 @@ void MdbService::noteGatewayCompatFollowup(const machine::Frame &frame,
   }
 
   const String wrapperPhase = gatewayWrapperPhaseLabel();
+  const String wrapperState = wrapperFsmStateLabel(wrapperFsmState_);
+
   emitEvent("gateway_compat_followup_observed",
             String("{\"timestamp_us\":") + frame.endedAtUs +
+                ",\"delta_us\":" + followupDeltaUs +
                 ",\"first_followup_kind_after_setup\":\"" +
                 escapeForJson(firstFollowupKindAfterSetup_) +
                 "\",\"first_followup_raw9_after_setup\":" +
@@ -2567,8 +2683,8 @@ void MdbService::noteGatewayCompatFollowup(const machine::Frame &frame,
                 wrapperContinuationDeltaUs_ +
                 ",\"wrapper_continuation_interpretation\":\"" +
                 escapeForJson(wrapperContinuationInterpretation_) +
-                "\"" + buildWrapperPhaseAndStateJson(wrapperPhase, wrapperPhase) +
-                "\",\"wrapper_standard_flow_entered\":" +
+                "\"" + buildWrapperPhaseAndStateJson(wrapperPhase, wrapperState) +
+                ",\"wrapper_standard_flow_entered\":" +
                 boolToJson(wrapperStandardFlowEntered_) +
                 ",\"wrapper_expected_next_rx_kind\":\"" +
                 escapeForJson(wrapperExpectedNextRxKindLabel()) +
@@ -2579,7 +2695,8 @@ void MdbService::noteGatewayCompatFollowup(const machine::Frame &frame,
                 "\",\"setup_response_profile_id\":\"" +
                 escapeForJson(gatewayCompatResponseProfileIdLabel()) +
                 "\",\"semantic_suspect_field\":\"" +
-                escapeForJson(gatewayCompatSemanticSuspectField_) + "\"}");
+                escapeForJson(gatewayCompatSemanticSuspectField_) +
+                "\"" + frameSnapshotJson + "}");
 }
 
 void MdbService::noteGatewayCompatFollowupTimeout(unsigned long nowUs)
@@ -2744,6 +2861,10 @@ String MdbService::buildUnknownRxReason(const machine::Frame &frame) const
 void MdbService::emitProtocolProgressExpectation(const char *reason,
                                                  unsigned long tsUs)
 {
+  if (!kEmitProtocolProgressEvents)
+  {
+    return;
+  }
   const bool isUnknownAfterSetup =
       reason != nullptr && strcmp(reason, "unknown_rx_after_setup") == 0;
   uint16_t suppressedDuplicates = 0;
@@ -4104,13 +4225,18 @@ void MdbService::handlePhyStatusObserved(const char *eventName, unsigned long ts
     }
     const bool isCoinChangerCommand =
         kMdbCoinChangerEnabled &&
+        mdbOperatingMode_ == MdbOperatingMode::CoinChanger &&
         ((firstByte >> 3U) == kMdbCoinChangerAddress);
     const bool isCoinChangerPoll =
         isCoinChangerCommand &&
         ((firstByte & 0x07U) == kCoinChangerPollCommand);
-    const bool isGatewayPoll = firstByte == kObservedGatewayPollByte;
+    const bool isGatewayPoll =
+        mdbOperatingMode_ == MdbOperatingMode::Cashless &&
+        firstByte == kObservedGatewayPollByte;
     const bool isCashlessCommand =
-        kMdbCashlessEnabled && isCashlessDevice1CommandByte(firstByte);
+        kMdbCashlessEnabled &&
+        mdbOperatingMode_ == MdbOperatingMode::Cashless &&
+        isCashlessDevice1CommandByte(firstByte);
     if (!isCashlessCommand && !isGatewayPoll && !isCoinChangerCommand)
     {
       return;
@@ -4247,6 +4373,11 @@ void MdbService::handlePhyStatusObserved(const char *eventName, unsigned long ts
       clearObservedRawStatusWindow();
       resetGatewaySetupCompat();
     };
+
+    if (mdbOperatingMode_ != MdbOperatingMode::Cashless)
+    {
+      return;
+    }
 
     if (gatewaySetupCompatStage_ != 0 &&
         (tsUs < gatewaySetupCompatStartedUs_ ||
@@ -4446,6 +4577,48 @@ void MdbService::handleFastFrameObserved(const machine::Frame &frame,
     return;
   }
 
+  // Mode isolation: whitelist-based.
+  // CoinChanger mode: handle frames addressed to addr 1 AND the non-standard
+  //   compat poll byte 0xFE (which carries no MDB address but must be answered
+  //   on the fast path to meet the 5ms response deadline).
+  //   Everything else (cashless addr 2/3, misdecoded resets, gateway bytes, etc.)
+  //   is silently dropped here.
+  // Cashless mode: drop only coin changer frames (addr 1); pass everything else.
+  if (mdbOperatingMode_ == MdbOperatingMode::CoinChanger)
+  {
+    // The VMC sends 0xFE with the 9th bit set (MDB address byte, addr=31 cmd=6).
+    // hasHighBit is therefore true for the real compat poll — do not exclude it.
+    const bool isCoinCompatPoll = kMdbCoinChangerEnabled &&
+        frame.normalizedLength == 1 &&
+        frame.normalized[0] == kObservedCoinChangerPollByte;
+    if (!isCoinCompatPoll &&
+        (!frame.hasCandidateAddress ||
+         frame.candidateAddress != kMdbCoinChangerAddress))
+    {
+      return;
+    }
+  }
+  else
+  {
+    if (frame.hasCandidateAddress &&
+        frame.candidateAddress == kMdbCoinChangerAddress)
+    {
+      // Cashless mode: log that VMC sent a coin changer frame so we can detect
+      // whether this VMC ever initializes address 1.
+      if (frame.checksumValid)
+      {
+        emitEvent("rx_byte_0x08_observed",
+                  String("{\"timestamp_us\":") + frame.endedAtUs +
+                      ",\"raw_hex\":\"" + machine::rawHex(frame) +
+                      "\",\"normalized_hex\":\"" + machine::normalizedHex(frame) +
+                      "\",\"candidate_command\":" +
+                      static_cast<unsigned int>(frame.candidateCommand) +
+                      ",\"mode\":\"cashless\",\"fast_path\":true}");
+      }
+      return;
+    }
+  }
+
   if (lastResetAckSentUs_ > 0 && frame.endedAtUs > lastResetAckSentUs_ &&
       (lastNextRxAfterResetTsUs_ == 0 ||
        lastNextRxAfterResetTsUs_ < lastResetAckSentUs_))
@@ -4593,6 +4766,18 @@ void MdbService::handleFastFrameObserved(const machine::Frame &frame,
       resetAfterSetupRetryCount_++;
     }
     resetSeenCount_++;
+    if (setupResponseVariantCycleEnabled_ && !setupResponseVariantAccepted_ &&
+        lastSetupResponseTxUs_ > 0)
+    {
+      setupResponseVariantIndex_ =
+          (setupResponseVariantIndex_ + 1U) % kSetupResponseVariantCount;
+      emitEvent("setup_response_variant_advanced",
+                String("{\"index\":") + setupResponseVariantIndex_ +
+                    ",\"label\":\"" +
+                    kSetupResponseVariants[setupResponseVariantIndex_].label +
+                    "\",\"count\":" + kSetupResponseVariantCount +
+                    ",\"fast_path\":true}");
+    }
     lastResetTsUs_ = frame.endedAtUs;
     lastResetAckPreparedUs_ = ackPrepareUs;
     lastPollAfterResetTsUs_ = 0;
@@ -4733,6 +4918,7 @@ void MdbService::handleFastFrameObserved(const machine::Frame &frame,
         coinChangerLastCreditReplyTxUs_ > 0 &&
         frame.endedAtUs >= coinChangerLastCreditReplyTxUs_)
     {
+      const unsigned long confirmedScaled = coinChangerAwaitingVmcScaled_;
       emitEvent("coin_reply_followup_poll_seen",
                 String("{\"compat_mode\":true,\"rx_ts_us\":") +
                     frame.endedAtUs +
@@ -4742,6 +4928,27 @@ void MdbService::handleFastFrameObserved(const machine::Frame &frame,
                     coinChangerAwaitingVmcScaled_ +
                     ",\"transaction_id\":\"" +
                     escapeForJson(coinChangerPendingTransactionId_) + "\"}");
+      // The VMC polling again after credit bytes is an implicit ACK — it
+      // accepted the credit and is continuing the gateway session normally.
+      coinChangerAwaitingVmcScaled_ = 0;
+      coinChangerLastCreditReplyTxUs_ = 0;
+      emitEvent("coin_credit_confirmed_by_followup_poll",
+                String("{\"confirmed_scaled\":") + confirmedScaled +
+                    ",\"remaining_pending_scaled\":" + coinChangerPendingScaled_ +
+                    ",\"transaction_id\":\"" +
+                    escapeForJson(coinChangerPendingTransactionId_) + "\"}");
+      if (coinChangerPendingScaled_ == 0)
+      {
+        const String tid = coinChangerPendingTransactionId_;
+        const unsigned long amtMinor = coinChangerPendingAmountMinor_;
+        emitEvent("coin_payment_completed",
+                  String("{\"amount_minor\":") + amtMinor +
+                      ",\"transaction_id\":\"" + escapeForJson(tid) +
+                      "\",\"vmc_credit_accepted\":true,"
+                      "\"completion_scope\":\"compat_followup_poll\"}");
+        clearCoinChangerPendingPayment();
+      }
+      stateDirty_ = true;
     }
     emitEvent("compat_single_byte_trigger_observed",
               String("{\"experimental\":true,\"not_standard_mdb_poll\":true,\"raw_hex\":\"") +
@@ -4761,6 +4968,7 @@ void MdbService::handleFastFrameObserved(const machine::Frame &frame,
     lastCoinCompatPollReplyTxUs_ = firstTxUs;
     coinCompatTailIgnoreUntilUs_ =
         frame.endedAtUs + kCoinCompatTailIgnoreWindowUs;
+    coinCompatPollFastHandledAtUs_ = frame.endedAtUs;
     emitEvent("coin_poll_observed_compat",
               String("{\"fast_path\":true,\"rx_ts_us\":") + frame.endedAtUs +
                   ",\"tx_ts_us\":" + firstTxUs +
@@ -4975,42 +5183,137 @@ void MdbService::handleFastFrameObserved(const machine::Frame &frame,
     }
 
     if (frame.candidateCommand == kCashlessReaderControlCommand &&
-        frame.normalizedLength >= 2 &&
-        frame.normalized[1] == kCashlessReaderControlSubcommand)
+        (frame.normalizedLength == 1 ||
+         (frame.normalizedLength >= 2 &&
+          frame.normalized[1] == kCashlessReaderControlSubcommand)))
     {
+      // Single-byte 0x1C is a compact ENABLE used by this gateway VMC.
+      // ACK first: no JSON/logs/state-heavy work before the MDB TX.
       const bool enable =
           frame.normalizedLength >= 3 ? frame.normalized[2] == 0x01 : true;
+
+      const bool compactSingleByteReaderControl = frame.normalizedLength == 1;
+      if (kCompactReaderControlRetProbeEnabled &&
+          compactSingleByteReaderControl)
+      {
+        // Test hypothesis: 0x1C in this Jofemar QR/gateway flow may be a
+        // wrapper continuation, not a standard MDB ENABLE. ACK and no-response
+        // both ended in reset, so answer RET (0xFF) and observe VMC behavior.
+        recordResponseDecision("compact_reader_control_probe_ret",
+                               true, frame.endedAtUs);
+
+        noteExpectedTxKind(DialogueKind::Unknown, readerState_, "ret",
+                           frame.endedAtUs, false,
+                           "compact_reader_control_ret_probe");
+
+        uint8_t retFrame[2] = {};
+        const size_t retLength =
+            mdb::buildSingleByteResponse(mdb::kRet, retFrame, sizeof(retFrame));
+        deferredFastPathCashlessTxUs_ =
+            transmitResponseFrame("compact_reader_control_ret_probe",
+                                  "ret", retFrame, retLength,
+                                  frame.endedAtUs);
+
+        gatewayCompatLastOutcome_ = "compact_reader_control_ret_probe";
+        gatewayCompatRetryInterpretation_ = "waiting_after_ret_to_1c";
+        wrapperStandardFlowEntered_ = false;
+        wrapperExpectedNextRxKind_ = "RETRY_OR_WRAPPER_CONTINUATION_OR_RESET";
+        wrapperExpectedNextAction_ = "OBSERVE_AFTER_RET_TO_1C";
+        wrapperContinuationKind_ = "reader_control_compact_ret";
+        wrapperContinuationRaw9_ = raw9Word(frame.normalized[0], true);
+        wrapperContinuationDeltaUs_ =
+            (lastSetupResponseTxUs_ > 0 && frame.endedAtUs >= lastSetupResponseTxUs_)
+                ? (frame.endedAtUs - lastSetupResponseTxUs_)
+                : 0;
+        wrapperContinuationInterpretation_ = "ret_probe_for_compact_1c";
+        setWrapperFsmState(WrapperFsmState::WaitingForContinuation,
+                           "compact_1c_ret_probe", frame.endedAtUs);
+
+        emitEvent("compact_reader_control_ret_probe",
+                  String("{\"timestamp_us\":") + frame.endedAtUs +
+                      ",\"tx_ts_us\":" + deferredFastPathCashlessTxUs_ +
+                      ",\"frame_hex\":\"" + machine::normalizedHex(frame) +
+                      "\",\"ret_hex\":\"FF\""
+                      ",\"fast_path\":true"
+                      ",\"reason\":\"testing_ret_to_compact_1c\""
+                      ",\"expected_next_rx_kind\":\"RETRY_OR_WRAPPER_CONTINUATION_OR_RESET\"}");
+
+        stateDirty_ = true;
+        markFastHandled();
+        return;
+      }
+
       noteExpectedTxKind(enable ? DialogueKind::Enable : DialogueKind::Disable,
                          readerState_, "ack", frame.endedAtUs, true,
                          "reader_control_ack_fast");
+
       deferredFastPathCashlessTxUs_ = sendAckRaw("reader_control_ack");
-      if (kEmitCashlessHotPathEvents)
-      {
-        emitEvent(enable ? "enable_seen" : "disable_seen",
-                  String("{\"timestamp_us\":") + frame.endedAtUs +
-                      ",\"fast_path\":true}");
-      }
+
       isReaderEnabled_ = enable;
+
       if (enable)
       {
+        cashlessJustResetPending_ = false;
+        beginSessionPending_ = false;
+        beginSessionAmountMinor_ = 0;
+
+        gatewayCompatLastOutcome_ = "enable";
+        gatewayCompatRetryInterpretation_ = "fast_reader_control_enable";
+        wrapperStandardFlowEntered_ = true;
+        wrapperExpectedNextRxKind_ = "POLL";
+        wrapperExpectedNextAction_ = "WAIT_FOR_POLL";
+        wrapperContinuationKind_ = "reader_control_enable_fast";
+        wrapperContinuationRaw9_ =
+            frame.normalizedLength > 0 ? raw9Word(frame.normalized[0], true) : 0;
+        wrapperContinuationDeltaUs_ =
+            (lastSetupResponseTxUs_ > 0 && frame.endedAtUs >= lastSetupResponseTxUs_)
+                ? (frame.endedAtUs - lastSetupResponseTxUs_)
+                : 0;
+        wrapperContinuationInterpretation_ = "fast_enable_after_gateway_setup";
+
+        setWrapperFsmState(WrapperFsmState::ContinuedToStandardFlow,
+                           "fast_reader_control_enable_after_gateway_setup",
+                           frame.endedAtUs);
+
         if (setupResponseRejectedByVmc_ != "true")
         {
           setupResponseRejectedByVmc_ = "false";
           setupRejectionBasis_ = "enable_progression";
         }
+
         session_.onReaderEnabled(finalizedAtMs);
-        if (kEmitCashlessHotPathEvents)
+
+        enableAppliedCount_++;
+
+        if (setupResponseVariantCycleEnabled_ && !setupResponseVariantAccepted_)
         {
-          emitEvent("enable_accepted",
-                    String("{\"timestamp_us\":") + frame.endedAtUs +
+          setupResponseVariantAccepted_ = true;
+          emitEvent("setup_response_variant_accepted",
+                    String("{\"index\":") + setupResponseVariantIndex_ +
+                        ",\"label\":\"" +
+                        kSetupResponseVariants[setupResponseVariantIndex_].label +
+                        "\",\"currency_code_hi\":\"" +
+                        byteToHex(kSetupResponseVariants[setupResponseVariantIndex_].currencyCountryCodeHi) +
+                        "\",\"currency_code_lo\":\"" +
+                        byteToHex(kSetupResponseVariants[setupResponseVariantIndex_].currencyCountryCodeLo) +
+                        "\",\"response_time\":" +
+                        kSetupResponseVariants[setupResponseVariantIndex_].responseTime +
+                        ",\"options\":" +
+                        kSetupResponseVariants[setupResponseVariantIndex_].options +
+                        ",\"timestamp_us\":" + frame.endedAtUs +
                         ",\"fast_path\":true}");
         }
-        enableAppliedCount_++;
+
         transitionReaderState(ReaderState::Enabled, "enable_state_applied_fast",
                               frame.endedAtUs);
         transitionReaderState(ReaderState::SessionIdle,
                               "reader_enabled_waiting_poll_fast",
-                              frame.endedAtUs);
+                              deferredFastPathCashlessTxUs_);
+
+        lastPollAfterResetTsUs_ = 0;
+        lastNextRxAfterResetTsUs_ = frame.endedAtUs;
+        nextActionHypothesis_ = "vmc_should_poll_after_reader_enable";
+
         if (creditFlowActive_)
         {
           creditFlowEnableSeen_ = true;
@@ -5023,9 +5326,30 @@ void MdbService::handleFastFrameObserved(const machine::Frame &frame,
         session_.onReaderDisabled(finalizedAtMs);
         beginSessionPending_ = false;
         beginSessionAmountMinor_ = 0;
-        transitionReaderState(ReaderState::Disabled, "disable_state_applied_fast",
+        cashlessJustResetPending_ = false;
+
+        gatewayCompatLastOutcome_ = "disable";
+        wrapperStandardFlowEntered_ = true;
+        wrapperExpectedNextRxKind_ = "ENABLE_OR_SETUP_RESTART";
+        wrapperExpectedNextAction_ = "WAIT_FOR_ENABLE_OR_SETUP_RESTART";
+        wrapperContinuationKind_ = "reader_control_disable_fast";
+        wrapperContinuationRaw9_ =
+            frame.normalizedLength > 0 ? raw9Word(frame.normalized[0], true) : 0;
+        wrapperContinuationDeltaUs_ =
+            (lastSetupResponseTxUs_ > 0 && frame.endedAtUs >= lastSetupResponseTxUs_)
+                ? (frame.endedAtUs - lastSetupResponseTxUs_)
+                : 0;
+        wrapperContinuationInterpretation_ = "fast_disable_after_gateway_setup";
+
+        setWrapperFsmState(WrapperFsmState::ContinuedToStandardFlow,
+                           "fast_reader_control_disable_after_gateway_setup",
+                           frame.endedAtUs);
+
+        transitionReaderState(ReaderState::Disabled,
+                              "disable_state_applied_fast",
                               frame.endedAtUs);
       }
+
       deferredFastPathCashlessKind_ = 7;
       deferredFastPathCashlessEnabled_ = enable;
       stateDirty_ = true;
@@ -5177,6 +5501,7 @@ void MdbService::update()
   const CashlessSession::Snapshot beforeUpdate = session_.snapshot();
   session_.update(connectionService_.isWebSocketConnected(), now);
   applyDesiredState(now);
+
   if (snapshotChanged(beforeUpdate, session_.snapshot()))
   {
     stateDirty_ = true;
@@ -5469,13 +5794,37 @@ void MdbService::requestCoinPayment(unsigned long amountMinor,
                                     const String &transactionId)
 {
   activate();
-  emitEvent("payment_rejected",
-            String("{\"reason\":\"coin_changer_disabled_cashless_mode\","
-                   "\"amount_minor\":") +
-                amountMinor + ",\"transaction_id\":\"" +
-                escapeForJson(transactionId) + "\"}");
-  clearCoinChangerPendingPayment();
+  if (coinChangerPendingScaled_ > 0 || coinChangerAwaitingVmcScaled_ > 0)
+  {
+    emitEvent("payment_rejected",
+              String("{\"reason\":\"coin_changer_payment_already_pending\","
+                     "\"amount_minor\":") +
+                  amountMinor + ",\"pending_scaled\":" + coinChangerPendingScaled_ +
+                  ",\"awaiting_vmc_scaled\":" + coinChangerAwaitingVmcScaled_ +
+                  ",\"transaction_id\":\"" + escapeForJson(transactionId) + "\"}");
+    return;
+  }
+  const unsigned long scaledAmount =
+      amountMinor / static_cast<unsigned long>(kMdbCoinChangerScalingFactor);
+  if (scaledAmount == 0)
+  {
+    emitEvent("payment_rejected",
+              String("{\"reason\":\"coin_changer_amount_too_small\","
+                     "\"amount_minor\":") +
+                  amountMinor + ",\"scaling_factor\":" + kMdbCoinChangerScalingFactor +
+                  ",\"transaction_id\":\"" + escapeForJson(transactionId) + "\"}");
+    return;
+  }
+  coinChangerPendingAmountMinor_ = amountMinor;
+  coinChangerPendingScaled_ = scaledAmount;
+  coinChangerPendingTransactionId_ = transactionId;
+  coinChangerQueuedAtMs_ = millis();
   stateDirty_ = true;
+  emitEvent("coin_payment_queued",
+            String("{\"amount_minor\":") + amountMinor +
+                ",\"pending_scaled\":" + scaledAmount +
+                ",\"scaling_factor\":" + kMdbCoinChangerScalingFactor +
+                ",\"transaction_id\":\"" + escapeForJson(transactionId) + "\"}");
 }
 
 // Сохраняет новый платёж как pending.
@@ -5521,6 +5870,7 @@ void MdbService::resetCoinChangerProtocolState(bool justResetPending)
   lastCoinCompatPollReplyTxUs_ = 0;
   coinCompatTailIgnoreUntilUs_ = 0;
   coinChangerLastCreditReplyTxUs_ = 0;
+  coinCompatPollFastHandledAtUs_ = 0;
 }
 
 void MdbService::clearCoinChangerPendingPayment()
@@ -7094,11 +7444,24 @@ void MdbService::flushDeferredFastPathEvents()
       emitEvent("ACK_SENT",
                 String("{\"trigger\":\"fast_reader_control\","
                        "\"tx_ts_us\":") +
-                    deferredFastPathCashlessTxUs_ + "}");
+                    deferredFastPathCashlessTxUs_ +
+                    ",\"reader_enabled\":" +
+                    boolToJson(deferredFastPathCashlessEnabled_) + "}");
+
       emitEvent("cashless_reader_control",
                 String("{\"enabled\":") +
                     boolToJson(deferredFastPathCashlessEnabled_) +
-                    ",\"fast_path\":true}");
+                    ",\"fast_path\":true"
+                    ",\"wrapper_standard_flow_entered\":" +
+                    boolToJson(wrapperStandardFlowEntered_) +
+                    ",\"wrapper_state\":\"" +
+                    escapeForJson(wrapperFsmStateLabel(wrapperFsmState_)) +
+                    "\",\"expected_next_rx_kind\":\"" +
+                    escapeForJson(expectedNextRxKindLabel()) +
+                    "\",\"next_action_hypothesis\":\"" +
+                    escapeForJson(nextActionHypothesis_) +
+                    "\"}");
+
       break;
     default:
       break;
@@ -7561,6 +7924,52 @@ void MdbService::configureSetupResponseExperiment(bool enabled,
                 static_cast<unsigned int>(setupResponseExperimentResponseTime_) +
                 ",\"options\":" +
                 static_cast<unsigned int>(setupResponseExperimentOptions_) + "}");
+}
+
+void MdbService::setMdbOperatingMode(MdbOperatingMode mode)
+{
+  if (mdbOperatingMode_ == mode)
+  {
+    return;
+  }
+  mdbOperatingMode_ = mode;
+  // Reset both protocol state machines so the newly active device
+  // starts fresh from RESET when the VMC polls it.
+  resetCoinChangerProtocolState(true);
+  clearCoinChangerPendingPayment();
+  readerState_ = ReaderState::Uninitialized;
+  cashlessJustResetPending_ = true;
+  cashlessSetupSeen_ = false;
+  cashlessSetupResponsePending_ = false;
+  cashlessSetupResponseAwaitingAck_ = false;
+  isReaderEnabled_ = false;
+  emitEvent("mdb_operating_mode_changed",
+            String("{\"mode\":\"") +
+                (mode == MdbOperatingMode::CoinChanger ? "coin_changer" : "cashless") +
+                "\"}");
+}
+
+void MdbService::setSetupResponseVariantCycle(bool enabled, uint8_t startIndex)
+{
+  activate();
+  setupResponseVariantCycleEnabled_ = enabled;
+  if (enabled)
+  {
+    setupResponseVariantIndex_ =
+        startIndex < kSetupResponseVariantCount ? startIndex : 0;
+    setupResponseVariantAccepted_ = false;
+  }
+  emitEvent("setup_response_variant_cycle_changed",
+            String("{\"enabled\":") + boolToJson(enabled) +
+                ",\"index\":" + setupResponseVariantIndex_ +
+                ",\"count\":" + kSetupResponseVariantCount +
+                ",\"accepted\":" +
+                boolToJson(static_cast<bool>(setupResponseVariantAccepted_)) +
+                ",\"label\":\"" +
+                (setupResponseVariantIndex_ < kSetupResponseVariantCount
+                     ? kSetupResponseVariants[setupResponseVariantIndex_].label
+                     : "none") +
+                "\"}");
 }
 
 // Переключает инверсию RX-линии.
@@ -8725,6 +9134,22 @@ void MdbService::processFrame(const machine::Frame &frame, unsigned long now,
     return;
   }
 
+  // Probe: log every valid frame addressed to coin changer (addr 1) regardless
+  // of current mode — lets us see whether VMC ever speaks to address 0x08.
+  if (kMdbCoinChangerEnabled && frame.checksumValid && frame.hasCandidateAddress &&
+      frame.candidateAddress == kMdbCoinChangerAddress)
+  {
+    emitEvent("rx_byte_0x08_observed",
+              String("{\"timestamp_us\":") + frame.endedAtUs +
+                  ",\"raw_hex\":\"" + machine::rawHex(frame) +
+                  "\",\"normalized_hex\":\"" + machine::normalizedHex(frame) +
+                  "\",\"candidate_command\":" +
+                  static_cast<unsigned int>(frame.candidateCommand) +
+                  ",\"mode\":\"" +
+                  (mdbOperatingMode_ == MdbOperatingMode::CoinChanger ? "coin_changer" : "cashless") +
+                  "\"}");
+  }
+
   if (cashlessSetupResponseAwaitingAck_ && frame.normalizedLength == 1 &&
       frame.normalized[0] == mdb::kAck)
   {
@@ -8831,7 +9256,8 @@ void MdbService::processFrame(const machine::Frame &frame, unsigned long now,
   if (!coinCompatTailIgnored && !cashlessFastReplyHandled &&
       kMdbCoinChangerEnabled &&
       frame.normalizedLength == 1 &&
-      frame.normalized[0] == kObservedCoinChangerPollByte)
+      frame.normalized[0] == kObservedCoinChangerPollByte &&
+      frame.endedAtUs != coinCompatPollFastHandledAtUs_)
   {
     const unsigned long pendingScaledBefore = coinChangerPendingScaled_;
     const bool justResetPendingBefore = coinChangerJustResetPending_;
@@ -9317,6 +9743,26 @@ bool MdbService::shouldTrackCashlessSplitPrefix(const machine::Frame &frame) con
                                       frame.candidateCommand))
   {
     return false;
+  }
+
+  // Single-byte reader-control 0x1C in gateway-wrapper flow is a compact ENABLE,
+  // not a split-frame prefix. Handle it directly in handleLevel1CashlessFrame()
+  // or in the PHY fast path.
+  if (frame.candidateCommand == kCashlessReaderControlCommand)
+  {
+    const bool gatewayWrapperPhase =
+        currentSetupResponseGatewayCompat_ ||
+        wrapperFsmState_ == WrapperFsmState::SetupConfigSeen ||
+        wrapperFsmState_ == WrapperFsmState::ReaderConfigSent ||
+        wrapperFsmState_ == WrapperFsmState::WaitingForContinuation ||
+        wrapperFsmState_ == WrapperFsmState::ContinuationTimeout ||
+        lastSetupVariant_ == "SETUP_CONFIG_GATEWAY_COMPAT" ||
+        previousSetupVariant_ == "SETUP_CONFIG_GATEWAY_COMPAT";
+
+    if (gatewayWrapperPhase)
+    {
+      return false;
+    }
   }
 
   return frame.candidateCommand == kCashlessSetupCommand ||
@@ -10122,12 +10568,26 @@ bool MdbService::handleLevel1CashlessFrame(const machine::Frame &frame,
       frame.checksumValid && frame.hasCandidateAddress &&
       matchesCashlessDialogueAddress(frame.candidateAddress,
                                      frame.candidateCommand);
+
+  const bool isGatewayWrapperReaderControlPhase =
+      currentSetupResponseGatewayCompat_ ||
+      wrapperFsmState_ == WrapperFsmState::SetupConfigSeen ||
+      wrapperFsmState_ == WrapperFsmState::ReaderConfigSent ||
+      wrapperFsmState_ == WrapperFsmState::WaitingForContinuation ||
+      wrapperFsmState_ == WrapperFsmState::ContinuationTimeout ||
+      lastSetupVariant_ == "SETUP_CONFIG_GATEWAY_COMPAT" ||
+      previousSetupVariant_ == "SETUP_CONFIG_GATEWAY_COMPAT";
+
   const bool isCompactReaderControlEnableCompat =
       isCashlessDialogue &&
       frame.candidateCommand == kCashlessReaderControlCommand &&
       frame.normalizedLength == 1 &&
-      (readerState_ == ReaderState::ExpansionPending ||
-       readerState_ == ReaderState::Disabled);
+      (readerState_ == ReaderState::SetupSeen ||
+       readerState_ == ReaderState::SetupResponded ||
+       readerState_ == ReaderState::ExpansionPending ||
+       readerState_ == ReaderState::Disabled ||
+       isGatewayWrapperReaderControlPhase);
+
   const bool isCashlessReset =
       isCashlessDialogue && frame.candidateCommand == kCashlessResetCommand;
   if (isCashlessReset)
@@ -10256,29 +10716,137 @@ bool MdbService::handleLevel1CashlessFrame(const machine::Frame &frame,
 
   if (isCompactReaderControlEnableCompat)
   {
+    if (kCompactReaderControlRetProbeEnabled &&
+        frame.normalizedLength == 1)
+    {
+      // Same diagnostic as fast-path: answer compact 0x1C with RET (0xFF).
+      recordResponseDecision("compact_reader_control_probe_ret",
+                             true, frame.endedAtUs);
+
+      noteExpectedTxKind(DialogueKind::Unknown, readerState_, "ret",
+                         frame.endedAtUs, false,
+                         "compact_reader_control_ret_probe");
+
+      uint8_t retFrame[2] = {};
+      const size_t retLength =
+          mdb::buildSingleByteResponse(mdb::kRet, retFrame, sizeof(retFrame));
+      const unsigned long firstTxUs =
+          transmitResponseFrame("compact_reader_control_ret_probe",
+                                "ret", retFrame, retLength,
+                                frame.endedAtUs);
+
+      gatewayCompatLastOutcome_ = "compact_reader_control_ret_probe";
+      gatewayCompatRetryInterpretation_ = "waiting_after_ret_to_1c";
+      wrapperStandardFlowEntered_ = false;
+      wrapperExpectedNextRxKind_ = "RETRY_OR_WRAPPER_CONTINUATION_OR_RESET";
+      wrapperExpectedNextAction_ = "OBSERVE_AFTER_RET_TO_1C";
+      wrapperContinuationKind_ = "reader_control_compact_ret";
+      wrapperContinuationRaw9_ = frame.normalizedLength > 0
+                                     ? raw9Word(frame.normalized[0], true)
+                                     : 0;
+      wrapperContinuationDeltaUs_ =
+          (lastSetupResponseTxUs_ > 0 && frame.endedAtUs >= lastSetupResponseTxUs_)
+              ? (frame.endedAtUs - lastSetupResponseTxUs_)
+              : 0;
+      wrapperContinuationInterpretation_ = "ret_probe_for_compact_1c";
+      setWrapperFsmState(WrapperFsmState::WaitingForContinuation,
+                         "compact_1c_ret_probe", frame.endedAtUs);
+
+      emitEvent("compact_reader_control_ret_probe",
+                String("{\"timestamp_us\":") + frame.endedAtUs +
+                    ",\"tx_ts_us\":" + firstTxUs +
+                    ",\"frame_hex\":\"" + machine::normalizedHex(frame) +
+                    "\",\"ret_hex\":\"FF\""
+                    ",\"fast_path\":false"
+                    ",\"reason\":\"testing_ret_to_compact_1c\""
+                    ",\"expected_next_rx_kind\":\"RETRY_OR_WRAPPER_CONTINUATION_OR_RESET\"}");
+
+      stateDirty_ = true;
+      return true;
+    }
+
+    // Full/explicit reader-control ENABLE is still ACKed normally.
+    const unsigned long firstTxUs =
+        sendAckRaw("reader_control_enable_compact_ack");
+
+    isReaderEnabled_ = true;
+    cashlessJustResetPending_ = false;
+    beginSessionPending_ = false;
+    beginSessionAmountMinor_ = 0;
+
+    session_.onReaderEnabled(now);
+
+    enableRxCount_++;
+    enableAppliedCount_++;
+
+    if (setupResponseRejectedByVmc_ != "true")
+    {
+      setupResponseRejectedByVmc_ = "false";
+      setupRejectionBasis_ = "compact_enable_progression";
+    }
+
+    gatewayCompatLastOutcome_ = "enable";
+    wrapperStandardFlowEntered_ = true;
+    wrapperExpectedNextRxKind_ = "POLL";
+    wrapperExpectedNextAction_ = "WAIT_FOR_POLL";
+    wrapperContinuationKind_ = "reader_control_enable_compact";
+    wrapperContinuationRaw9_ = frame.normalizedLength > 0
+                                   ? raw9Word(frame.normalized[0], true)
+                                   : 0;
+    wrapperContinuationDeltaUs_ =
+        (lastSetupResponseTxUs_ > 0 && frame.endedAtUs >= lastSetupResponseTxUs_)
+            ? (frame.endedAtUs - lastSetupResponseTxUs_)
+            : 0;
+    wrapperContinuationInterpretation_ = "compact_enable_after_gateway_setup";
+
+    setWrapperFsmState(WrapperFsmState::ContinuedToStandardFlow,
+                       "compact_enable_after_gateway_setup", frame.endedAtUs);
+
+    transitionReaderState(ReaderState::Enabled, "enable_state_applied_compact",
+                          frame.endedAtUs);
+    transitionReaderState(ReaderState::SessionIdle,
+                          "reader_enabled_waiting_poll_compact", firstTxUs);
+
+    noteExpectedTxKind(DialogueKind::Enable, readerState_, "ack", frame.endedAtUs,
+                       true, "reader_control_enable_compact_ack");
+
+    noteActualTxKind("reader_control_enable_compact_ack", DialogueKind::Ack,
+                     readerState_, firstTxUs);
+    noteTxCompleted("reader_control_enable_compact_ack", DialogueKind::Ack);
+
     emitEvent("enable_seen",
               String("{\"timestamp_us\":") + frame.endedAtUs +
                   ",\"compact_compat\":true,"
                   "\"frame_hex\":\"" +
                   machine::normalizedHex(frame) + "\"}");
-    isReaderEnabled_ = true;
-    session_.onReaderEnabled(now);
+
     emitEvent("enable_accepted",
               String("{\"timestamp_us\":") + frame.endedAtUs +
-                  ",\"compact_compat\":true}");
-    enableAppliedCount_++;
-    transitionReaderState(ReaderState::Enabled, "enable_state_applied_compact",
-                          frame.endedAtUs);
-    transitionReaderState(ReaderState::SessionIdle,
-                          "reader_enabled_waiting_poll_compact", frame.endedAtUs);
-    noteExpectedTxKind(DialogueKind::Enable, readerState_, "ack", frame.endedAtUs,
-                       true, "reader_control_enable_compact_ack");
-    const unsigned long firstTxUs = sendAckRaw("reader_control_enable_compact_ack");
+                  ",\"compact_compat\":true,"
+                  "\"ack_tx_us\":" +
+                  firstTxUs +
+                  ",\"ack_delay_us\":" +
+                  ((firstTxUs > 0 && firstTxUs >= frame.endedAtUs)
+                       ? (firstTxUs - frame.endedAtUs)
+                       : 0) +
+                  "}");
+
     emitEvent("enable_state_applied",
               String("{\"timestamp_us\":") + firstTxUs +
-                  ",\"enabled\":true,\"compact_compat\":true}");
+                  ",\"enabled\":true,"
+                  "\"compact_compat\":true,"
+                  "\"reader_state\":\"" +
+                  readerStateLabel(readerState_) + "\"}");
+
     emitEvent("cashless_reader_control",
-              "{\"enabled\":true,\"compact_compat\":true}");
+              String("{\"enabled\":true,"
+                     "\"compact_compat\":true,"
+                     "\"ack_tx_us\":") +
+                  firstTxUs + "}");
+
+    emitProtocolProgressExpectation("compact_enable_ack_sent", firstTxUs);
+
+    stateDirty_ = true;
     return true;
   }
 
@@ -11303,51 +11871,47 @@ unsigned long MdbService::sendReaderSetupResponse(unsigned long rxEndedUs,
   }
 
   const bool useSetupResponseExperiment = setupResponseExperimentEnabled_;
+  const bool useVariantCycle = setupResponseVariantCycleEnabled_ &&
+                               setupResponseVariantIndex_ < kSetupResponseVariantCount;
+  const SetupResponseVariant *activeVariant =
+      useVariantCycle ? &kSetupResponseVariants[setupResponseVariantIndex_] : nullptr;
 
+  // Gateway wrapper SETUP must use the active gateway profile first.
+  // This prevents setup-response variant cycling / experiment overrides from
+  // silently downgrading Application Maximum Response Time back to 0x03.
   const uint8_t responseTime =
-      useSetupResponseExperiment
-          ? setupResponseExperimentResponseTime_
-          : (currentSetupResponseGatewayCompat_
-                 ? gatewayCompatResponseTime()
-                 : kCashlessAppMaxResponseTime);
+      currentSetupResponseGatewayCompat_ ? gatewayCompatResponseTime()
+      : activeVariant                    ? activeVariant->responseTime
+      : useSetupResponseExperiment       ? setupResponseExperimentResponseTime_
+                                         : kCashlessAppMaxResponseTime;
 
   const uint8_t options =
-      useSetupResponseExperiment
-          ? setupResponseExperimentOptions_
-          : (currentSetupResponseGatewayCompat_
-                 ? gatewayCompatResponseOptions()
-                 : 0x00);
+      currentSetupResponseGatewayCompat_ ? gatewayCompatResponseOptions()
+      : activeVariant                    ? activeVariant->options
+      : useSetupResponseExperiment       ? setupResponseExperimentOptions_
+                                         : 0x00;
 
   const uint8_t currencyCountryCodeHi =
-      useSetupResponseExperiment
-          ? setupResponseExperimentCurrencyCountryCodeHi_
-          : (currentSetupResponseGatewayCompat_
-                 ? gatewayCompatCurrencyCountryCodeHi()
-                 : kCashlessCurrencyCountryCodeHi);
+      currentSetupResponseGatewayCompat_ ? gatewayCompatCurrencyCountryCodeHi()
+      : activeVariant                    ? activeVariant->currencyCountryCodeHi
+      : useSetupResponseExperiment       ? setupResponseExperimentCurrencyCountryCodeHi_
+                                         : kCashlessCurrencyCountryCodeHi;
 
   const uint8_t currencyCountryCodeLo =
-      useSetupResponseExperiment
-          ? setupResponseExperimentCurrencyCountryCodeLo_
-          : (currentSetupResponseGatewayCompat_
-                 ? gatewayCompatCurrencyCountryCodeLo()
-                 : kCashlessCurrencyCountryCodeLo);
+      currentSetupResponseGatewayCompat_ ? gatewayCompatCurrencyCountryCodeLo()
+      : activeVariant                    ? activeVariant->currencyCountryCodeLo
+      : useSetupResponseExperiment       ? setupResponseExperimentCurrencyCountryCodeLo_
+                                         : kCashlessCurrencyCountryCodeLo;
 
-  // MDB Cashless SETUP CONFIG response.
-  //
-  // ВАЖНО:
-  // Здесь НЕ добавляем отдельный "0x01 header".
-  // Response payload должен быть:
-  //   feature level
-  //   currency/country code hi
-  //   currency/country code lo
-  //   scale factor
-  //   decimal places
-  //   max response time
-  //   options
-  //
-  // Для текущих значений ожидаемый frame:
-  //   01 14 17 64 02 01 00 93
-  const uint8_t payload[] = {
+  if (activeVariant)
+  {
+    emitEvent("setup_response_variant_used",
+              String("{\"index\":") + setupResponseVariantIndex_ +
+                  ",\"label\":\"" + activeVariant->label +
+                  "\",\"count\":" + kSetupResponseVariantCount + "}");
+  }
+
+  const uint8_t standardPayload[] = {
       kCashlessLevel,
       currencyCountryCodeHi,
       currencyCountryCodeLo,
@@ -11357,33 +11921,46 @@ unsigned long MdbService::sendReaderSetupResponse(unsigned long rxEndedUs,
       options,
   };
 
-  static_assert(sizeof(payload) == 7,
-                "MDB SETUP RESPONSE payload must stay 7 bytes before checksum");
+  const uint8_t gatewayPayload[] = {
+      kCashlessLevel,
+      currencyCountryCodeHi,
+      currencyCountryCodeLo,
+      kCashlessScalingFactor,
+      kCashlessDecimalPlaces,
+      responseTime,
+      options,
+  };
 
-  uint8_t frame[sizeof(payload) + 1] = {};
+  const bool useGatewayPayload = currentSetupResponseGatewayCompat_;
+  const uint8_t *payload = useGatewayPayload ? gatewayPayload : standardPayload;
+
+  const size_t payloadLength =
+      useGatewayPayload ? sizeof(gatewayPayload) : sizeof(standardPayload);
+
+  uint8_t frame[sizeof(gatewayPayload) + 1] = {};
   size_t length =
-      mdb::buildSlaveBlock(payload, sizeof(payload), frame, sizeof(frame));
+      mdb::buildSlaveBlock(payload, payloadLength, frame, sizeof(frame));
 
-  const uint8_t expectedChecksum = mdb::checksum(payload, sizeof(payload));
+  const uint8_t expectedChecksum = mdb::checksum(payload, payloadLength);
 
-  if (length != sizeof(frame) || frame[sizeof(payload)] != expectedChecksum)
+  // Guard без emitEvent до TX. Если вдруг builder дал сбой — чиним локально
+  // и продолжаем максимально быстро.
+  bool checksumGuardFixed = false;
+  uint8_t checksumGuardActual =
+      length > 0 ? frame[length - 1] : static_cast<uint8_t>(0);
+
+  if (length != payloadLength + 1 || frame[payloadLength] != expectedChecksum)
   {
-    emitEvent(
-        "setup_response_checksum_guard_failed",
-        String("{\"payload_hex\":\"") + bytesToHex(payload, sizeof(payload)) +
-            "\",\"frame_hex\":\"" + bytesToHex(frame, length) +
-            "\",\"expected_checksum\":\"" + byteToHex(expectedChecksum) +
-            "\",\"actual_checksum\":\"" +
-            byteToHex(length > 0 ? frame[length - 1] : 0) +
-            "\",\"length\":" + length + "}");
+    checksumGuardFixed = true;
 
-    for (size_t i = 0; i < sizeof(payload); ++i)
+    for (size_t i = 0; i < payloadLength; ++i)
     {
       frame[i] = payload[i];
     }
 
-    frame[sizeof(payload)] = expectedChecksum;
-    length = sizeof(frame);
+    frame[payloadLength] = expectedChecksum;
+    length = payloadLength + 1;
+    checksumGuardActual = frame[payloadLength];
   }
 
   lastSetupFrameBuiltTsUs_ = micros();
@@ -11431,18 +12008,12 @@ unsigned long MdbService::sendReaderSetupResponse(unsigned long rxEndedUs,
 
   wrapperAckSemanticsSuspect_ = currentSetupResponseGatewayCompat_;
 
-  emitEvent(
-      "setup_response_frame_built",
-      String("{\"timestamp_us\":") + lastSetupFrameBuiltTsUs_ +
-          ",\"payload_hex\":\"" + bytesToHex(payload, sizeof(payload)) +
-          "\",\"frame_hex\":\"" + bytesToHex(frame, length) +
-          "\",\"checksum\":\"" + byteToHex(lastSetupResponseChecksum_) +
-          "\",\"checksum_dec\":" +
-          static_cast<unsigned int>(lastSetupResponseChecksum_) +
-          ",\"expected_checksum\":\"" + byteToHex(expectedChecksum) +
-          "\",\"length\":" + length +
-          ",\"format\":\"cashless_setup_config_without_extra_header\"}");
+  const char *setupResponseFormat =
+      useGatewayPayload
+          ? "gateway_setup_config_with_reader_config_header"
+          : "standard_setup_config_without_extra_header";
 
+  // ВАЖНО: TX должен идти ДО любых JSON/Serial логов.
   const unsigned long firstTxUs =
       transmitResponseFrame(responseReason, "setup_response", frame, length,
                             rxEndedUs);
@@ -11476,6 +12047,37 @@ unsigned long MdbService::sendReaderSetupResponse(unsigned long rxEndedUs,
        lastSetupTxDoneUs_ >= rxEndedUs)
           ? (lastSetupTxDoneUs_ - rxEndedUs)
           : 0;
+
+  // Логи только ПОСЛЕ TX.
+  if (checksumGuardFixed)
+  {
+    emitEvent(
+        "setup_response_checksum_guard_failed",
+        String("{\"payload_hex\":\"") + bytesToHex(payload, payloadLength) +
+            "\",\"frame_hex\":\"" + bytesToHex(frame, length) +
+            "\",\"expected_checksum\":\"" + byteToHex(expectedChecksum) +
+            "\",\"actual_checksum\":\"" + byteToHex(checksumGuardActual) +
+            "\",\"length\":" + length +
+            ",\"fixed_before_tx\":true}");
+  }
+
+  if (kEmitSetupResponseFrameBuiltEvent)
+  {
+    emitEvent(
+        "setup_response_frame_built",
+        String("{\"timestamp_us\":") + lastSetupFrameBuiltTsUs_ +
+            ",\"payload_hex\":\"" + bytesToHex(payload, payloadLength) +
+            "\",\"frame_hex\":\"" + bytesToHex(frame, length) +
+            "\",\"checksum\":\"" + byteToHex(lastSetupResponseChecksum_) +
+            "\",\"checksum_dec\":" +
+            static_cast<unsigned int>(lastSetupResponseChecksum_) +
+            ",\"expected_checksum\":\"" + byteToHex(expectedChecksum) +
+            "\",\"length\":" + length +
+            ",\"format\":\"" + setupResponseFormat +
+            "\",\"logged_after_tx\":true" +
+            ",\"tx_ts_us\":" + firstTxUs +
+            ",\"reply_delay_us\":" + lastSetupResponseReplyDelayUs_ + "}");
+  }
 
   if (kEmitTxHotPathTraceEvents)
   {
@@ -11530,7 +12132,7 @@ unsigned long MdbService::sendReaderSetupResponse(unsigned long rxEndedUs,
               String("{\"timestamp_us\":") + firstTxUs +
                   ",\"frame_hex\":\"" + bytesToHex(frame, length) +
                   "\",\"payload_hex\":\"" +
-                  bytesToHex(payload, sizeof(payload)) +
+                  bytesToHex(payload, payloadLength) +
                   "\",\"profile_id\":\"" +
                   escapeForJson(setupResponseProfileId_) +
                   "\",\"gateway_compat\":" +
@@ -11561,19 +12163,26 @@ unsigned long MdbService::sendReaderSetupResponse(unsigned long rxEndedUs,
                   escapeForJson(setupResponseSuspectField_) +
                   "\",\"checksum\":" +
                   static_cast<unsigned int>(lastSetupResponseChecksum_) +
-                  ",\"payload_length\":" + sizeof(payload) +
-                  ",\"frame_length\":" + length + "}");
+                  ",\"payload_length\":" + payloadLength +
+                  ",\"frame_length\":" + length +
+                  ",\"format\":\"" + setupResponseFormat + "\"}");
   }
 
   return firstTxUs;
 }
-
 unsigned long MdbService::sendReaderExpansionIdResponse(
     const char *responseReason)
 {
   const uint8_t payload[] = {
       // 0x09 = Expansion Identification Data header.
       0x09,
+
+      // Manufacturer code, 3 chars.
+      static_cast<uint8_t>(kMdbCashlessManufacturer[0]),
+      static_cast<uint8_t>(kMdbCashlessManufacturer[1]),
+      static_cast<uint8_t>(kMdbCashlessManufacturer[2]),
+
+      // Serial / reader id, 12 chars.
       static_cast<uint8_t>(kMdbCashlessReaderId[0]),
       static_cast<uint8_t>(kMdbCashlessReaderId[1]),
       static_cast<uint8_t>(kMdbCashlessReaderId[2]),
@@ -11586,16 +12195,33 @@ unsigned long MdbService::sendReaderExpansionIdResponse(
       static_cast<uint8_t>(kMdbCashlessReaderId[9]),
       static_cast<uint8_t>(kMdbCashlessReaderId[10]),
       static_cast<uint8_t>(kMdbCashlessReaderId[11]),
-      // 3-byte version tuple.
-      kMdbCashlessVersionMajor,
-      kMdbCashlessVersionMinor,
-      kMdbCashlessVersionPatch,
+
+      // Model / part number, 12 chars.
+      static_cast<uint8_t>(kMdbCashlessModel[0]),
+      static_cast<uint8_t>(kMdbCashlessModel[1]),
+      static_cast<uint8_t>(kMdbCashlessModel[2]),
+      static_cast<uint8_t>(kMdbCashlessModel[3]),
+      static_cast<uint8_t>(kMdbCashlessModel[4]),
+      static_cast<uint8_t>(kMdbCashlessModel[5]),
+      static_cast<uint8_t>(kMdbCashlessModel[6]),
+      static_cast<uint8_t>(kMdbCashlessModel[7]),
+      static_cast<uint8_t>(kMdbCashlessModel[8]),
+      static_cast<uint8_t>(kMdbCashlessModel[9]),
+      static_cast<uint8_t>(kMdbCashlessModel[10]),
+      static_cast<uint8_t>(kMdbCashlessModel[11]),
+
+      // Software version, 2 bytes.
+      kMdbCashlessSoftwareVersionHi,
+      kMdbCashlessSoftwareVersionLo,
   };
-  static_assert(sizeof(payload) == 16,
-                "MDB EXPANSION ID payload must stay 16 bytes before checksum");
+
+  static_assert(sizeof(payload) == 30,
+                "MDB cashless EXPANSION ID payload must stay 30 bytes before checksum");
+
   uint8_t frame[sizeof(payload) + 1] = {};
   const size_t length =
       mdb::buildSlaveBlock(payload, sizeof(payload), frame, sizeof(frame));
+
   return transmitResponseFrame(responseReason, "expansion_response", frame, length);
 }
 
@@ -11759,7 +12385,10 @@ unsigned long MdbService::sendCoinChangerPollResponse(
   size_t payloadLength = 0;
   unsigned long remainingScaled = coinChangerPendingScaled_;
   unsigned long emittedScaled = 0;
-  while ((payloadLength + 2) <= sizeof(payload))
+  // Each MDB coin-in event is exactly 1 byte: 01RR CCCC
+  // (01 = coin deposited, RR=00 cashbox routing, CCCC = coin type).
+  // No second byte — the previous 0x00 was a bug that garbled the checksum frame.
+  while (payloadLength < sizeof(payload))
   {
     uint8_t coinType = 0;
     uint8_t coinValue = 0;
@@ -11768,7 +12397,6 @@ unsigned long MdbService::sendCoinChangerPollResponse(
       break;
     }
     payload[payloadLength++] = static_cast<uint8_t>(0x40U | (coinType & 0x0FU));
-    payload[payloadLength++] = 0x00;
     remainingScaled -= coinValue;
     emittedScaled += coinValue;
   }

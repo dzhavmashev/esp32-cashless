@@ -1,0 +1,18 @@
+// Function : FUN_40170464
+// Address  : 0x40170464
+// Size     : 37 bytes
+
+
+int FUN_40170464(int param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4)
+
+{
+  int iVar1;
+  
+  iVar1 = FUN_40170168(param_1,param_2,param_3,param_4);
+  if (iVar1 == 0) {
+    iVar1 = (**(code **)(**(int **)(param_1 + 8) + 0x18))
+                      (*(int **)(param_1 + 8),param_2,param_3,param_4);
+  }
+  return iVar1;
+}
+

@@ -1,0 +1,18 @@
+// Function : FUN_400faad0
+// Address  : 0x400faad0
+// Size     : 34 bytes
+
+
+undefined4 FUN_400faad0(int param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4)
+
+{
+  undefined4 uVar1;
+  
+  uVar1 = 0x1107;
+  if (*(char *)(param_1 + 0x12) != '\0') {
+    uVar1 = FUN_400fa208(*(undefined4 *)(param_1 + 0xc),*(undefined1 *)(param_1 + 0x10),0x21,param_2
+                         ,param_3,param_4);
+  }
+  return uVar1;
+}
+

@@ -1,0 +1,17 @@
+// Function : FUN_40101ce8
+// Address  : 0x40101ce8
+// Size     : 32 bytes
+
+
+undefined4
+FUN_40101ce8(undefined4 param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4,
+            undefined4 param_5,undefined4 param_6,int param_7)
+
+{
+  undefined4 uVar1;
+  
+  memw();
+  uVar1 = FUN_40101bc4(param_1,param_2,param_3,param_4,param_5,param_6,param_7 << 3);
+  return uVar1;
+}
+

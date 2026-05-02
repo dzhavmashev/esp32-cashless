@@ -1,0 +1,18 @@
+// Function : FUN_4010231c
+// Address  : 0x4010231c
+// Size     : 36 bytes
+
+
+undefined4
+FUN_4010231c(undefined4 param_1,undefined4 param_2,undefined4 param_3,undefined4 param_4,
+            undefined4 param_5,undefined4 param_6)
+
+{
+  undefined4 uVar1;
+  
+  uVar1 = (*(code *)&SUB_4008c01c)(param_1);
+  memw();
+  FUN_40105814(param_1,uVar1,param_2,param_3,param_4,param_5,param_6);
+  return 0;
+}
+

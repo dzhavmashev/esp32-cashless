@@ -217,6 +217,10 @@ namespace
     Serial.println("  mdb_passive_sniff_off");
     Serial.println("  mdb_rx_invert_on");
     Serial.println("  mdb_rx_invert_off");
+    Serial.println("  mdb_setup_variant_cycle_on");
+    Serial.println("  mdb_setup_variant_cycle_off");
+    Serial.println("  mdb_mode_cashless");
+    Serial.println("  mdb_mode_coin_changer");
     Serial.println("  mdb_gateway_profile <0|1|2>");
     Serial.println("  mdb_set_cashless_address <n>");
     Serial.println("  mdb_set_expected_address <n>");
@@ -327,7 +331,11 @@ namespace
         command == "mdb_sniff_summary" || command == "mdb_sniff_stats" ||
         command == "mdb_passive_sniff_on" ||
         command == "mdb_passive_sniff_off" ||
-        command == "mdb_rx_invert_on" || command == "mdb_rx_invert_off")
+        command == "mdb_rx_invert_on" || command == "mdb_rx_invert_off" ||
+        command == "mdb_setup_variant_cycle_on" ||
+        command == "mdb_setup_variant_cycle_off" ||
+        command == "mdb_mode_cashless" ||
+        command == "mdb_mode_coin_changer")
     {
       dispatchSerialCommand(command);
       return;

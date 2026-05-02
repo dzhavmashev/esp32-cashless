@@ -1,0 +1,12 @@
+// Function : FUN_400e1394
+// Address  : 0x400e1394
+// Size     : 14 bytes
+
+
+void FUN_400e1394(undefined4 param_1,undefined4 *param_2,undefined4 param_3)
+
+{
+  FUN_400e1164(param_1,*param_2,param_3);
+  return;
+}
+

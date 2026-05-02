@@ -125,7 +125,11 @@ void CommandService::handleTextMessage(const uint8_t* payload, size_t length) {
     if (transport == "mdb") {
       const String transactionId =
           String(payloadNode["payload"]["transaction_id"] | "");
-      mdbService_.requestApproveCredit(amountMinor, transactionId);
+      // This VMC uses a gateway protocol where credit is injected via the 0xFE
+      // compat poll byte — standard cashless BEGIN SESSION flow is not used.
+      // requestCoinPayment queues coinChangerPendingScaled_ which sendCoinChangerPollResponse
+      // emits as coin-in bytes on the next 0xFE poll, regardless of operating mode.
+      mdbService_.requestCoinPayment(amountMinor, transactionId);
       return;
     }
 
@@ -282,6 +286,26 @@ void CommandService::handleTextMessage(const uint8_t* payload, size_t length) {
     return;
   }
 
+
+  if (command == "mdb_setup_variant_cycle_on") {
+    mdbService_.setSetupResponseVariantCycle(true, 0);
+    return;
+  }
+
+  if (command == "mdb_setup_variant_cycle_off") {
+    mdbService_.setSetupResponseVariantCycle(false);
+    return;
+  }
+
+  if (command == "mdb_mode_cashless") {
+    mdbService_.setMdbOperatingMode(MdbService::MdbOperatingMode::Cashless);
+    return;
+  }
+
+  if (command == "mdb_mode_coin_changer") {
+    mdbService_.setMdbOperatingMode(MdbService::MdbOperatingMode::CoinChanger);
+    return;
+  }
 
   if (command == "mdb_experiment_enable") {
     mdbService_.setExperimentEnabled(true);

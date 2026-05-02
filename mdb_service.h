@@ -5,31 +5,32 @@
 #include "cashless_session.h"
 #include "machine_phy.h"
 
-
 class ConnectionService;
 
-
-struct GatewayCompatProfileConfig {
+struct GatewayCompatProfileConfig
+{
   uint8_t profileId;
-  const char* profileLabel;
-  const char* currencyProfileLabel;
+  const char *profileLabel;
+  const char *currencyProfileLabel;
   uint8_t responseTime;
   uint8_t options;
   uint8_t currencyCountryCodeHi;
   uint8_t currencyCountryCodeLo;
-  const char* currencyEncodingModeLabel;
-  const char* semanticSuspectFieldLabel;
+  const char *currencyEncodingModeLabel;
+  const char *semanticSuspectFieldLabel;
   bool currencyEncodingChangedFromProfile1;
 };
 
 // Основной сервис MDB-like интеграции с кофемашиной.
-class MdbService {
- public:
+class MdbService
+{
+public:
   static constexpr size_t kStrategyCount = 5;
   static constexpr size_t kSniffHistorySize = 120;
   static constexpr size_t kStoredFrameBytes = 24;
 
-  struct StrategyView {
+  struct StrategyView
+  {
     char name = 'A';
     uint8_t bytes[kStoredFrameBytes] = {};
     size_t length = 0;
@@ -42,7 +43,8 @@ class MdbService {
     uint8_t confidence = 0;
   };
 
-  struct SniffFrameRecord {
+  struct SniffFrameRecord
+  {
     bool used = false;
     unsigned long startedAtMs = 0;
     unsigned long endedAtMs = 0;
@@ -72,13 +74,15 @@ class MdbService {
     StrategyView strategies[kStrategyCount] = {};
   };
 
-  enum class ExperimentMode : uint8_t {
+  enum class ExperimentMode : uint8_t
+  {
     PassiveOnly = 0,
     SelectiveReplyProbe = 1,
     ProtocolShapedProbe = 2,
   };
 
-  struct ExperimentConfig {
+  struct ExperimentConfig
+  {
     bool enabled = false;
     uint8_t expectedAddress = 12;
     uint8_t triggerAddress = 12;
@@ -95,7 +99,8 @@ class MdbService {
     bool disableOnAnyError = true;
   };
 
-  enum class ResponsePathState : uint8_t {
+  enum class ResponsePathState : uint8_t
+  {
     Idle = 0,
     RxFrameReady = 1,
     ResponseDecision = 2,
@@ -107,14 +112,16 @@ class MdbService {
     TxAbort = 8,
   };
 
-  enum class TxScope : uint8_t {
+  enum class TxScope : uint8_t
+  {
     None = 0,
     MdbResponse = 1,
     DebugCommand = 2,
     Experiment = 3,
   };
 
-  struct BusFrameSnapshot {
+  struct BusFrameSnapshot
+  {
     bool valid = false;
     uint16_t raw9 = 0;
     uint8_t dataByte = 0;
@@ -123,12 +130,14 @@ class MdbService {
     String hex;
   };
 
-  enum class DialogueDirection : uint8_t {
+  enum class DialogueDirection : uint8_t
+  {
     RxFromMachine = 0,
     TxToMachine = 1,
   };
 
-  enum class DialogueKind : uint8_t {
+  enum class DialogueKind : uint8_t
+  {
     Unknown = 0,
     Reset = 1,
     Setup = 2,
@@ -143,7 +152,14 @@ class MdbService {
     ReaderStateChange = 11,
   };
 
-  enum class ReaderState : uint8_t {
+  enum class MdbOperatingMode : uint8_t
+  {
+    Cashless = 0,
+    CoinChanger = 1,
+  };
+
+  enum class ReaderState : uint8_t
+  {
     Uninitialized = 0,
     ResetSeen = 1,
     SetupSeen = 2,
@@ -157,7 +173,8 @@ class MdbService {
     Error = 10,
   };
 
-  enum class WrapperFsmState : uint8_t {
+  enum class WrapperFsmState : uint8_t
+  {
     Idle = 0,
     SetupConfigSeen = 1,
     ReaderConfigSent = 2,
@@ -168,7 +185,8 @@ class MdbService {
     ContinuedToStandardFlow = 7,
   };
 
-  enum class WrapperAckSemanticsMode : uint8_t {
+  enum class WrapperAckSemanticsMode : uint8_t
+  {
     StandardSetupAck = 0,
     WrapperContinuationOnly = 1,
   };
@@ -176,7 +194,8 @@ class MdbService {
   static constexpr size_t kDialogueHistorySize = 60;
   static constexpr size_t kDialogueReasonSize = 40;
 
-  struct DialogueEvent {
+  struct DialogueEvent
+  {
     bool used = false;
     uint32_t tsUs = 0;
     uint8_t direction = 0;
@@ -190,7 +209,7 @@ class MdbService {
   };
 
   // Создаёт сервис и привязывает его к транспортному слою backend.
-  explicit MdbService(ConnectionService& connectionService);
+  explicit MdbService(ConnectionService &connectionService);
 
   // Инициализирует PHY и стартовое состояние cashless-сессии.
   void begin();
@@ -203,20 +222,20 @@ class MdbService {
 
   // Сохраняет новый платёж как pending.
   void requestRecordPayment(unsigned long amountMinor,
-                            const String& transactionId = "");
-  // Заглушка coin changer MDB path: в текущем режиме работаем только как cashless.
+                            const String &transactionId = "");
+  // Ставит платёж в очередь для отправки через coin changer POLL compat (0xFE).
   void requestCoinPayment(unsigned long amountMinor,
-                          const String& transactionId = "");
+                          const String &transactionId = "");
   // Переводит pending-платёж в активный кредит.
   void requestApproveCredit(unsigned long amountMinor,
-                            const String& transactionId = "");
+                            const String &transactionId = "");
   // Сбрасывает текущую сессию и суммы.
   void requestClearSession();
   // Публикует диагностическую информацию о конфигурации сервиса.
   void requestProbe();
   // Публикует service-level debug/control event.
-  bool emitControlEvent(const char* eventType, const String& details,
-                        String* deliveryMode = nullptr);
+  bool emitControlEvent(const char *eventType, const String &details,
+                        String *deliveryMode = nullptr);
   // Отправляет тестовый кадр в линию автомата.
   void requestProbeTx();
   // Выполняет электрический pulse-тест TX-линии.
@@ -247,7 +266,16 @@ class MdbService {
                                         uint8_t currencyCountryCodeLo,
                                         uint8_t responseTime,
                                         uint8_t options,
-                                        const String& label = "");
+                                        const String &label = "");
+  // Включает автоматический перебор таблицы вариантов SETUP response.
+  // На каждый RESET после отправки setup_response (если VMC не принял) индекс
+  // автоматически сдвигается на следующий вариант. При получении ENABLE
+  // вариант фиксируется и выводится событие setup_response_variant_accepted.
+  void setSetupResponseVariantCycle(bool enabled, uint8_t startIndex = 0);
+  // Переключает режим работы MDB: cashless (адрес 0x02) или coin_changer (адрес 0x01).
+  // В режиме CoinChanger cashless-команды игнорируются и наоборот.
+  void setMdbOperatingMode(MdbOperatingMode mode);
+  MdbOperatingMode mdbOperatingMode() const { return mdbOperatingMode_; }
   // Включает или выключает инверсию RX.
   void setRxInvertEnabled(bool enabled);
   // Включает или выключает подробный монитор кадров.
@@ -255,7 +283,7 @@ class MdbService {
   // Переключает passive sniff без автоматических ответов.
   void setPassiveSniffEnabled(bool enabled);
   // Отправляет произвольную HEX-последовательность в линию.
-  void sendRawHex(const String& hexPayload);
+  void sendRawHex(const String &hexPayload);
   // Включает или выключает controlled selective-reply experiment.
   void setExperimentEnabled(bool enabled);
   // Обновляет конфигурацию controlled experiment.
@@ -284,49 +312,49 @@ class MdbService {
   // Возвращает JSON-сводку состояния для backend.
   String buildDebugStateJson() const;
 
- private:
+private:
   // Возвращает строковую метку состояния response path.
-  static const char* responsePathStateLabel(ResponsePathState state);
+  static const char *responsePathStateLabel(ResponsePathState state);
   // Возвращает строковую метку области TX-логирования.
-  static const char* txScopeLabel(TxScope scope);
+  static const char *txScopeLabel(TxScope scope);
   // Возвращает строковую метку направления dialogue trace.
-  static const char* dialogueDirectionLabel(DialogueDirection direction);
+  static const char *dialogueDirectionLabel(DialogueDirection direction);
   // Возвращает строковую метку high-level вида кадра/ответа.
-  static const char* dialogueKindLabel(DialogueKind kind);
+  static const char *dialogueKindLabel(DialogueKind kind);
   // Возвращает строковую метку high-level reader FSM.
-  static const char* readerStateLabel(ReaderState state);
+  static const char *readerStateLabel(ReaderState state);
   // Возвращает текущую фазу диалога для probe/debug.
-  const char* currentDialoguePhaseLabel() const;
+  const char *currentDialoguePhaseLabel() const;
   static constexpr size_t kTxAuditKindBucketCount = 10;
   // Возвращает строковую метку audit-bucket для MDB-TX kind.
-  static const char* txAuditKindBucketLabel(size_t index);
+  static const char *txAuditKindBucketLabel(size_t index);
   // Возвращает индекс audit-bucket для MDB-TX kind.
-  static size_t txAuditKindBucketFor(const char* txKind, DialogueKind kind);
+  static size_t txAuditKindBucketFor(const char *txKind, DialogueKind kind);
   // Включает PHY при первом реальном использовании.
   void activate();
   // Классифицирует RX-кадр со стороны автомата.
-  DialogueKind classifyRxFrameKind(const machine::Frame& frame) const;
+  DialogueKind classifyRxFrameKind(const machine::Frame &frame) const;
   // Возвращает true, если входящий адрес/команда допустимы для нашего cashless dialogue.
   bool matchesCashlessDialogueAddress(uint8_t address, uint8_t command) const;
   // Возвращает true, если кадр адресован coin changer emulator.
   bool matchesCoinChangerDialogueAddress(uint8_t address, uint8_t command) const;
   // Классифицирует TX-кадр со стороны reader.
-  DialogueKind classifyTxFrameKind(const uint8_t* frame, size_t length,
-                                   const char* txKind) const;
+  DialogueKind classifyTxFrameKind(const uint8_t *frame, size_t length,
+                                   const char *txKind) const;
   // Сохраняет один high-level dialogue event в ring buffer и публикует его.
   void appendDialogueEvent(DialogueDirection direction, DialogueKind kind,
                            uint16_t raw9, uint8_t dataByte, bool ninthBit,
                            ReaderState stateBefore, ReaderState stateAfter,
-                           const char* decision, unsigned long tsUs);
+                           const char *decision, unsigned long tsUs);
   // Меняет reader dialogue state с явным логом причины.
-  void transitionReaderState(ReaderState newState, const char* reason,
+  void transitionReaderState(ReaderState newState, const char *reason,
                              unsigned long tsUs);
   // Возвращает JSON истории последних событий диалога.
   String buildDialogueHistoryJson() const;
   // Возвращает JSON телеметрии high-level dialogue state.
   String buildDialogueTelemetryJson() const;
   // Возвращает фазу post-reset progression.
-  const char* postResetPhaseLabel() const;
+  const char *postResetPhaseLabel() const;
   // Возвращает ожидаемый следующий RX-kind для текущего protocol state.
   String expectedNextRxKindLabel() const;
   // Возвращает ожидаемый следующий TX-kind для текущего protocol state.
@@ -334,21 +362,21 @@ class MdbService {
   // Возвращает краткий blocker дальнейшего protocol progression.
   String protocolProgressBlockerLabel() const;
   // Возвращает расширенную причину неизвестного RX-кадра.
-  String buildUnknownRxReason(const machine::Frame& frame) const;
+  String buildUnknownRxReason(const machine::Frame &frame) const;
   // Возвращает tentative-kind для неизвестного RX-кадра.
-  String buildUnknownTentativeKind(const machine::Frame& frame) const;
+  String buildUnknownTentativeKind(const machine::Frame &frame) const;
   // Возвращает вариант SETUP-пакета для диагностики progression.
-  String buildSetupVariantLabel(const machine::Frame& frame) const;
+  String buildSetupVariantLabel(const machine::Frame &frame) const;
   // Возвращает классификационную причину, почему SETUP отнесён к выбранному варианту.
-  String buildSetupClassificationReason(const machine::Frame& frame) const;
+  String buildSetupClassificationReason(const machine::Frame &frame) const;
   // Возвращает MDB subcommand/setup byte, если он присутствует.
-  int16_t setupSubcommandValue(const machine::Frame& frame) const;
+  int16_t setupSubcommandValue(const machine::Frame &frame) const;
   // Возвращает активный глобально-сконфигурированный profile для gateway compat setup.
-  const GatewayCompatProfileConfig& gatewayCompatProfileConfig() const;
+  const GatewayCompatProfileConfig &gatewayCompatProfileConfig() const;
   // Возвращает label выбранного response-profile для gateway compat setup.
-  const char* gatewayCompatResponseProfileIdLabel() const;
+  const char *gatewayCompatResponseProfileIdLabel() const;
   // Возвращает label выбранного Currency/Country Code profile для gateway compat setup.
-  const char* gatewayCurrencyCountryCodeProfileIdLabel() const;
+  const char *gatewayCurrencyCountryCodeProfileIdLabel() const;
   // Возвращает response time для текущего gateway compat profile.
   uint8_t gatewayCompatResponseTime() const;
   // Возвращает options byte для текущего gateway compat profile.
@@ -358,13 +386,13 @@ class MdbService {
   // Возвращает младший байт packed BCD поля Currency/Country Code для gateway profile.
   uint8_t gatewayCompatCurrencyCountryCodeLo() const;
   // Возвращает режим кодирования поля Currency/Country Code.
-  const char* gatewayCurrencyCountryCodeEncodingModeLabel() const;
+  const char *gatewayCurrencyCountryCodeEncodingModeLabel() const;
   // Возвращает HEX-строку packed BCD поля Currency/Country Code для текущего gateway profile.
   String gatewayCurrencyCountryCodeBytesHex() const;
   // Возвращает true, если кодирование поля Currency/Country Code отличается от profile 1.
   bool gatewayCurrencyCountryCodeChangedFromProfile1() const;
   // Возвращает наиболее подозрительное поле текущего gateway compat profile.
-  const char* gatewayCompatSemanticSuspectFieldLabel() const;
+  const char *gatewayCompatSemanticSuspectFieldLabel() const;
   // Возвращает true, если повтор setup похож на долгий wrapper watchdog/retry cycle.
   bool gatewayWrapperRetryAfterLongSilence() const;
   // Возвращает ожидаемое wrapper-specific следующее действие после gateway setup.
@@ -376,9 +404,9 @@ class MdbService {
   // Возвращает текущую фазу wrapper-handshake для gateway-style setup.
   String gatewayWrapperPhaseLabel() const;
   // Возвращает строковую метку dedicated wrapper FSM.
-  static const char* wrapperFsmStateLabel(WrapperFsmState state);
+  static const char *wrapperFsmStateLabel(WrapperFsmState state);
   // Возвращает строковую метку режима ACK-semantics для wrapper setup.
-  static const char* wrapperAckSemanticsModeLabel(
+  static const char *wrapperAckSemanticsModeLabel(
       WrapperAckSemanticsMode mode);
   // Возвращает ожидаемый wrapper-specific следующий RX-kind до входа в standard flow.
   String wrapperExpectedNextRxKindLabel() const;
@@ -395,102 +423,102 @@ class MdbService {
   // Возвращает оценку, влияет ли foreign traffic на текущий progression blocker.
   String foreignTrafficCausalLabel() const;
   // Фиксирует наблюдение setup-варианта и repeated-setup диагностику.
-  void noteSetupObserved(const machine::Frame& frame, unsigned long tsUs,
-                         const char* handlerReason);
+  void noteSetupObserved(const machine::Frame &frame, unsigned long tsUs,
+                         const char *handlerReason);
   // Вооружает диагностику первого meaningful follow-up после gateway compat setup response.
   void armGatewayCompatFollowupTracking(unsigned long txStartUs);
   // Фиксирует первый meaningful RX после gateway compat setup response.
-  void noteGatewayCompatFollowup(const machine::Frame& frame, DialogueKind kind);
+  void noteGatewayCompatFollowup(const machine::Frame &frame, DialogueKind kind);
   // Фиксирует отсутствие meaningful follow-up после gateway compat setup response.
   void noteGatewayCompatFollowupTimeout(unsigned long nowUs);
   // Переводит wrapper continuation FSM в новое состояние и фиксирует причину.
-  void setWrapperFsmState(WrapperFsmState newState, const char* reason,
+  void setWrapperFsmState(WrapperFsmState newState, const char *reason,
                           unsigned long tsUs);
   // Публикует текущее ожидание по protocol progression.
-  void emitProtocolProgressExpectation(const char* reason, unsigned long tsUs);
+  void emitProtocolProgressExpectation(const char *reason, unsigned long tsUs);
   // Публикует текущее ожидание post-reset progression.
-  void emitPostResetProgressionExpectation(const char* reason,
+  void emitPostResetProgressionExpectation(const char *reason,
                                            unsigned long tsUs);
   // Сохраняет краткую причину отсутствия ответа.
-  void noteNoResponse(const char* reason, unsigned long tsUs,
+  void noteNoResponse(const char *reason, unsigned long tsUs,
                       DialogueKind kind);
   // Копирует краткую строку причины в фиксированный буфер.
-  static void copyReasonText(char* target, size_t capacity,
-                             const char* source);
+  static void copyReasonText(char *target, size_t capacity,
+                             const char *source);
   // Публикует текущий probe snapshot, когда response path свободен.
-  void emitProbeEvent(const char* snapshotMode = "direct",
-                      const char* trigger = "mdb_probe");
+  void emitProbeEvent(const char *snapshotMode = "direct",
+                      const char *trigger = "mdb_probe");
   // Строит компактный probe snapshot для безопасной доставки при большом full probe.
-  String buildCompactProbeJson(const char* snapshotMode, const char* trigger,
+  String buildCompactProbeJson(const char *snapshotMode, const char *trigger,
                                size_t fullProbeLength,
-                               const String& fullProbeHash,
-                               const char* compactReason) const;
+                               const String &fullProbeHash,
+                               const char *compactReason) const;
   // Публикует одноразовый маркер готовности debug/control transport.
   void emitDebugTransportReadyIfNeeded(unsigned long nowMs);
   // Если probe был отложен во время MDB-ответа, публикует его после возврата в idle.
   void flushPendingProbeIfIdle();
   // Обновляет внутренний snapshot последнего принятого RX-кадра без тяжёлого логирования.
-  DialogueKind prepareAcceptedRxFrame(const machine::Frame& frame);
+  DialogueKind prepareAcceptedRxFrame(const machine::Frame &frame);
   // Публикует RX trace уже после обработки кадра, чтобы не задерживать MDB-ответ.
-  void emitAcceptedRxFrameTrace(const machine::Frame& frame, DialogueKind kind);
+  void emitAcceptedRxFrameTrace(const machine::Frame &frame, DialogueKind kind);
   // Сохраняет принятый RX-кадр для телеметрии response path.
-  void recordAcceptedRxFrame(const machine::Frame& frame);
+  void recordAcceptedRxFrame(const machine::Frame &frame);
   // Прогоняет уже собранный валидный кадр через тот же high-level pipeline,
   // что и обычный RX путь: accepted trace, fast-path, processFrame, counters.
-  void dispatchAcceptedFrame(const machine::Frame& frame, unsigned long now,
+  void dispatchAcceptedFrame(const machine::Frame &frame, unsigned long now,
                              bool clearSplitPrefix = false);
   // Публикует решение response layer: отвечаем или намеренно молчим.
-  void recordResponseDecision(const char* reason, bool willRespond,
+  void recordResponseDecision(const char *reason, bool willRespond,
                               unsigned long tsUs);
   // Фиксирует ожидаемый MDB-TX для текущего RX kind/state.
   void noteExpectedTxKind(DialogueKind rxKind, ReaderState stateBefore,
-                          const char* expectedTxKind, unsigned long tsUs,
-                          bool required, const char* reason,
+                          const char *expectedTxKind, unsigned long tsUs,
+                          bool required, const char *reason,
                           bool emitAuditEvent = true);
   // Фиксирует фактически начатую MDB-TX отправку и сверяет с ожиданием.
-  void noteActualTxKind(const char* actualTxKind, DialogueKind kind,
+  void noteActualTxKind(const char *actualTxKind, DialogueKind kind,
                         ReaderState stateBefore, unsigned long tsUs);
   // Фиксирует завершение MDB-TX по kind.
-  void noteTxCompleted(const char* txKind, DialogueKind kind);
+  void noteTxCompleted(const char *txKind, DialogueKind kind);
   // Фиксирует abort MDB-TX по kind.
-  void noteTxAbortForKind(const char* txKind, DialogueKind kind,
-                          const char* reason, unsigned long tsUs);
+  void noteTxAbortForKind(const char *txKind, DialogueKind kind,
+                          const char *reason, unsigned long tsUs);
   // Фиксирует timeout MDB-TX по kind.
-  void noteTxTimeoutForKind(const char* txKind, DialogueKind kind,
-                            const char* reason, unsigned long tsUs);
+  void noteTxTimeoutForKind(const char *txKind, DialogueKind kind,
+                            const char *reason, unsigned long tsUs);
   // Сбрасывает текущее ожидание expected TX audit.
   void clearExpectedTxAudit();
   // Переводит response path в новое состояние и логирует переход.
   void setResponsePathState(ResponsePathState state, unsigned long tsUs,
-                            const char* reason);
+                            const char *reason);
   // Собирает отладочный снимок MDB response/TX path.
   String buildResponseTelemetryJson() const;
   // Собирает JSON-объект counters по audit-buckets TX kinds.
-  String buildTxAuditCountJson(const uint8_t* counters) const;
+  String buildTxAuditCountJson(const uint8_t *counters) const;
   // Отправляет MDB-ответ с полным response/TX trace.
-  unsigned long transmitResponseFrame(const char* decisionReason,
-                                      const char* txKind,
-                                      const uint8_t* frame, size_t length,
+  unsigned long transmitResponseFrame(const char *decisionReason,
+                                      const char *txKind,
+                                      const uint8_t *frame, size_t length,
                                       unsigned long rxEndedUs = 0);
   // Отправляет debug/experiment кадр с отдельной областью TX-логов.
-  unsigned long transmitDebugFrame(TxScope scope, const char* txKind,
-                                   const uint8_t* frame, size_t length);
+  unsigned long transmitDebugFrame(TxScope scope, const char *txKind,
+                                   const uint8_t *frame, size_t length);
   // Публикует один побайтный TX trace с учётом текущего контекста передачи.
   void emitObservedTxByte(TxScope scope, uint32_t frameId, size_t byteIndex,
                           uint8_t value, uint8_t ninthBit,
                           unsigned long tsUs);
   // Отправляет одно диагностическое MDB-событие в backend.
-  bool emitEvent(const char* eventType, const String& details,
-                 String* deliveryMode = nullptr,
-                 String* failureReason = nullptr);
+  bool emitEvent(const char *eventType, const String &details,
+                 String *deliveryMode = nullptr,
+                 String *failureReason = nullptr);
   // Логирует все RX-байты внутри принятого кадра отдельными событиями.
-  void emitObservedRxBytes(const machine::Frame& frame);
+  void emitObservedRxBytes(const machine::Frame &frame);
   // Публикует изменение состояния cashless-сессии.
   void emitStateChanged();
   // Сохраняет кадр в кольцевой буфер истории.
-  void storeSniffFrame(const machine::Frame& frame);
+  void storeSniffFrame(const machine::Frame &frame);
   // Считает стратегии нормализации для одного кадра.
-  void populateStrategyViews(const machine::Frame& frame, SniffFrameRecord& record) const;
+  void populateStrategyViews(const machine::Frame &frame, SniffFrameRecord &record) const;
   // Возвращает JSON с последними кадрами диагностики.
   String buildSniffRecentJson() const;
   // Возвращает JSON со сводной диагностикой кадров.
@@ -498,7 +526,7 @@ class MdbService {
   // Возвращает JSON со статистикой парсера и классификации.
   String buildSniffStatsJson() const;
   // Возвращает JSON с одним кратким кадром для recent-выгрузки.
-  String buildSniffRecentFrameJson(const SniffFrameRecord& record, size_t index) const;
+  String buildSniffRecentFrameJson(const SniffFrameRecord &record, size_t index) const;
   // Возвращает JSON с meta-данными recent-выгрузки.
   String buildSniffRecentMetaJson(size_t returnedFrames) const;
   // Возвращает JSON с meta-данными summary-выгрузки.
@@ -509,23 +537,23 @@ class MdbService {
                                      uint16_t bestChecksumPass,
                                      uint16_t bestPlausible) const;
   // Обрабатывает один уже собранный кадр линии.
-  void processFrame(const machine::Frame& frame, unsigned long now,
+  void processFrame(const machine::Frame &frame, unsigned long now,
                     bool cashlessFastReplyHandled = false);
   // Обрабатывает команды, адресованные coin changer emulator.
-  bool handleCoinChangerCommand(const machine::Frame& frame, unsigned long now,
+  bool handleCoinChangerCommand(const machine::Frame &frame, unsigned long now,
                                 bool fastPath);
   // Разбирает cashless-команды, адресованные нашему устройству.
   void handleCashlessCommand(uint8_t address, uint8_t command,
-                             const machine::Frame& frame, unsigned long now);
+                             const machine::Frame &frame, unsigned long now);
   // Обрабатывает активные Level 1 команды cashless reader.
-  bool handleLevel1CashlessFrame(const machine::Frame& frame, unsigned long now);
+  bool handleLevel1CashlessFrame(const machine::Frame &frame, unsigned long now);
   // Наблюдает за post-BEGIN-SESSION кадрами и ACK VMC.
-  void observeCreditFlowFrame(const machine::Frame& frame, unsigned long now);
+  void observeCreditFlowFrame(const machine::Frame &frame, unsigned long now);
   // Пытается отправить критичный hijack-ответ до любых логов и тяжёлой обработки.
-  bool tryFastCreditFlowReply(const machine::Frame& frame, unsigned long now);
+  bool tryFastCreditFlowReply(const machine::Frame &frame, unsigned long now);
   // Завершает CreditFlowStrategy и публикует итоговый результат.
-  void finalizeCreditFlowStrategy(unsigned long now, const char* status,
-                                  const char* reason);
+  void finalizeCreditFlowStrategy(unsigned long now, const char *status,
+                                  const char *reason);
   // Начинает буферизацию PHY TX telemetry, чтобы логировать её уже после отправки.
   void beginDeferredTxTrace();
   // Сбрасывает отложенный TX trace в mdb/events постфактум.
@@ -533,11 +561,11 @@ class MdbService {
   // Публикует отложенные fast-path события после выхода из критичного TX пути.
   void flushDeferredFastPathEvents();
   // Реакция на кадр сразу при его финализации в PHY.
-  void handleFastFrameObserved(const machine::Frame& frame,
+  void handleFastFrameObserved(const machine::Frame &frame,
                                unsigned long finalizedAtMs);
   // Быстрый ACK для текущего startup RESET, который ESP временно видит как FE/FC.
   bool sendCompatMisdecodedResetAck(unsigned long rxEndedUs, unsigned long now,
-                                    const char* responseReason);
+                                    const char *responseReason);
   // Сбрасывает runtime-состояние coin changer protocol.
   void resetCoinChangerProtocolState(bool justResetPending);
   // Очищает очередь активного coin-платежа.
@@ -546,15 +574,15 @@ class MdbService {
   // но ещё не подтверждённый VMC кредит.
   bool hasCoinChangerUnresolvedPayment() const;
   // Возвращает локально отправленный кредит обратно в pending-очередь.
-  void requeueCoinChangerAwaitingAcceptance(const char* reason);
+  void requeueCoinChangerAwaitingAcceptance(const char *reason);
   // Возвращает true, если кадр попал в compat-tail окно после coin poll.
-  bool shouldIgnoreCoinCompatTail(const machine::Frame& frame,
-                                  unsigned long* deltaUs = nullptr) const;
+  bool shouldIgnoreCoinCompatTail(const machine::Frame &frame,
+                                  unsigned long *deltaUs = nullptr) const;
   // Возвращает true, если одиночный address-byte стоит подождать как префикс split-frame.
-  bool shouldTrackCashlessSplitPrefix(const machine::Frame& frame) const;
+  bool shouldTrackCashlessSplitPrefix(const machine::Frame &frame) const;
   // Пытается склеить отложенный cashless address-byte с payload-кадром.
-  bool tryBuildCashlessSplitFrame(const machine::Frame& payloadFrame,
-                                  machine::Frame& combined) const;
+  bool tryBuildCashlessSplitFrame(const machine::Frame &payloadFrame,
+                                  machine::Frame &combined) const;
   // Сбрасывает отложенный префикс split-frame.
   void clearPendingCashlessSplitPrefix();
   // Добавляет сырое UART-наблюдение в fallback-окно cashless-команд.
@@ -562,94 +590,94 @@ class MdbService {
   // Пытается собрать из fallback-окна валидный cashless master-frame.
   bool tryHandleObservedRawStatusWindow(unsigned long tsUs);
   // Пытается разрезать слепившийся master-frame по повторному mode-bit.
-  bool tryHandleMergedCashlessFrame(const machine::Frame& frame, unsigned long now);
+  bool tryHandleMergedCashlessFrame(const machine::Frame &frame, unsigned long now);
   // Очищает fallback-окно сырых UART-байтов.
   void clearObservedRawStatusWindow();
   // Публикует накопительную сводку по одному режиму decoder matrix.
-  void emitDecoderModeScore(uint8_t mode, const char* reason);
+  void emitDecoderModeScore(uint8_t mode, const char *reason);
   // Проверяет, совпадают ли первые байты нормализованного кадра с командой.
-  bool frameStartsWith(const machine::Frame& frame, uint8_t firstByte,
+  bool frameStartsWith(const machine::Frame &frame, uint8_t firstByte,
                        int secondByte = -1, int thirdByte = -1) const;
   // Собирает первый байт MDB master-команды для выбранного cashless address.
   uint8_t cashlessCommandByte(uint8_t command) const;
   // Обрабатывает селективный experiment trigger на основании лучшей стратегии.
-  void handleExperimentTrigger(const StrategyView& view, const machine::Frame& frame,
+  void handleExperimentTrigger(const StrategyView &view, const machine::Frame &frame,
                                unsigned long now);
   // Выполняет отложенную экспериментальную передачу.
   void processExperiment(unsigned long now);
   // Собирает кадры в observation window после экспериментального ответа.
-  void observeExperimentFrame(const StrategyView& view, unsigned long now);
+  void observeExperimentFrame(const StrategyView &view, unsigned long now);
   // Завершает post-reply observation и публикует результат сравнения.
-  void finalizeExperimentObservation(unsigned long now, const char* reason);
+  void finalizeExperimentObservation(unsigned long now, const char *reason);
   // Возвращает строковую метку текущего experiment candidate.
   String buildExperimentCandidateLabel() const;
   // Аварийно выключает experiment mode и возвращается в passive-only.
-  void disableExperimentDueToError(const char* reason, unsigned long now);
+  void disableExperimentDueToError(const char *reason, unsigned long now);
   // Возвращает краткий путь последних семей для pre/post контекста.
   String buildRecentFamilyPath(size_t limit) const;
   // Возвращает имя режима controlled experiment.
-  const char* experimentModeToString(ExperimentMode mode) const;
+  const char *experimentModeToString(ExperimentMode mode) const;
   // Возвращает bytes для жёстко разрешённого protocol-shaped candidate.
-  bool resolveProtocolProbeCandidate(uint8_t candidateId, uint8_t* outBytes,
-                                     uint8_t& outLength) const;
+  bool resolveProtocolProbeCandidate(uint8_t candidateId, uint8_t *outBytes,
+                                     uint8_t &outLength) const;
   // Отправляет Reader Setup (11 00) response для Cashless Level 1 и
   // возвращает timestamp первого переданного байта.
   unsigned long sendReaderSetupResponse(unsigned long rxEndedUs,
-                                        const char* responseReason =
+                                        const char *responseReason =
                                             "setup_response");
   // Отправляет Reader Expansion ID (11 01) response.
   unsigned long sendReaderExpansionIdResponse(
-      const char* responseReason = "expansion_response");
+      const char *responseReason = "expansion_response");
   // Отправляет SETUP response coin changer emulator.
   unsigned long sendCoinChangerSetupResponse(
-      const char* responseReason = "coin_setup_response");
+      const char *responseReason = "coin_setup_response");
   // Отправляет TUBE STATUS response coin changer emulator.
   unsigned long sendCoinChangerTubeStatusResponse(
-      const char* responseReason = "coin_tube_status");
+      const char *responseReason = "coin_tube_status");
   // Отправляет POLL response coin changer emulator.
   unsigned long sendCoinChangerPollResponse(
-      const char* responseReason = "coin_poll_response",
+      const char *responseReason = "coin_poll_response",
       bool compatMode = false);
   // Отправляет EXPANSION/ID response coin changer emulator.
   unsigned long sendCoinChangerExpansionIdResponse(
-      const char* responseReason = "coin_expansion_response");
+      const char *responseReason = "coin_expansion_response");
   // Отправляет EXPANSION diagnostic status response coin changer emulator.
   unsigned long sendCoinChangerDiagnosticStatusResponse(
-      const char* responseReason = "coin_diag_status");
+      const char *responseReason = "coin_diag_status");
   // Выбирает самый крупный разрешённый coin type для остатка платежа.
   bool selectCoinChangerCoinType(unsigned long remainingScaled,
-                                 uint8_t& coinType,
-                                 uint8_t& coinValue) const;
+                                 uint8_t &coinType,
+                                 uint8_t &coinValue) const;
   // Выбирает и отправляет немедленный ответ на POLL без лишних логов до TX.
   unsigned long sendCashlessPollReply(unsigned long now, unsigned long rxEndedUs,
-                                      uint8_t& replyKind, bool& readerEnabled);
+                                      uint8_t &replyKind, bool &readerEnabled);
   // Отправляет байт статуса JUST RESET без публикации событий.
   unsigned long sendJustResetRaw(
-      const char* responseReason = "just_reset_status");
+      const char *responseReason = "just_reset_status");
   // Отправляет статус JUST RESET (0x00) для принудительного re-setup со стороны VMC.
   void sendJustResetStatus();
   // Отправляет ACK без публикации событий и возвращает timestamp первого TX-байта.
-  unsigned long sendAckRaw(const char* responseReason = "ack");
+  unsigned long sendAckRaw(const char *responseReason = "ack");
   // Отправляет ACK.
   void sendAck();
   // Включает ожидание ACK после отправки SETUP RESPONSE.
   void markSetupResponseSent(unsigned long firstTxUs, bool awaitAck);
   // Завершает ожидание ACK после SETUP RESPONSE c логированием результата.
   void markSetupResponseAckReceived(unsigned long ackTsUs);
-  void markSetupResponseAckMissing(const char* reason,
-                                   const String& extraJson = "");
+  void markSetupResponseAckMissing(const char *reason,
+                                   const String &extraJson = "");
   // Публикует сводный audit при признаках отклонения SETUP RESPONSE со стороны VMC.
-  void emitSetupResponseRejectionAudit(const char* basis, unsigned long tsUs,
-                                       const machine::Frame* followupFrame = nullptr,
-                                       const char* followupKind = nullptr,
-                                       const String& extraJson = "");
+  void emitSetupResponseRejectionAudit(const char *basis, unsigned long tsUs,
+                                       const machine::Frame *followupFrame = nullptr,
+                                       const char *followupKind = nullptr,
+                                       const String &extraJson = "");
   // Отправляет NAK.
   void sendNak();
   // Отправляет RET.
   void sendRet();
   // Отправляет подтверждение vend с суммой.
   unsigned long sendVendApproved(unsigned long amountMinor,
-                                 const char* responseReason = "vend_approved");
+                                 const char *responseReason = "vend_approved");
   // Отправляет отказ vend с суммой.
   void sendVendDenied(unsigned long amountMinor);
   // Отправляет минимальный VEND DENIED без суммы для сброса застрявшего VEND.
@@ -662,45 +690,45 @@ class MdbService {
   void sendSessionComplete();
   // Отправляет BEGIN SESSION с суммой.
   unsigned long sendBeginSession(uint16_t amountMinor,
-                                 const char* responseReason = "begin_session");
+                                 const char *responseReason = "begin_session");
   // Фиксирует отправку generic BEGIN SESSION и включает ожидание ACK.
   void markBeginSessionSent(unsigned long firstTxUs, uint16_t amountMinor);
   // Фиксирует получение ACK на generic BEGIN SESSION.
   void markBeginSessionAckReceived(unsigned long ackTsUs);
   // Фиксирует отсутствие ACK на generic BEGIN SESSION.
-  void markBeginSessionAckMissing(const char* reason, unsigned long nowMs);
+  void markBeginSessionAckMissing(const char *reason, unsigned long nowMs);
   // Переcобирает заранее подготовленные ответы для критичного fast-path.
   void rebuildPrecomputedFrames();
   // Разбирает HEX-строку в массив байтов.
-  bool parseHexPayload(const String& hexPayload, uint8_t* buffer, size_t& length);
+  bool parseHexPayload(const String &hexPayload, uint8_t *buffer, size_t &length);
   // Применяет отложенные переходы состояния и сетевые зависимости.
   void applyDesiredState(unsigned long now);
   // Преобразует состояние FSM в строку.
-  const char* stateToString(CashlessSession::State state) const;
+  const char *stateToString(CashlessSession::State state) const;
   // Статический adapter для PHY TX observer.
-  static void handlePhyTxObservedThunk(void* context, uint32_t frameId,
+  static void handlePhyTxObservedThunk(void *context, uint32_t frameId,
                                        size_t byteIndex, uint8_t value,
                                        uint8_t ninthBit,
                                        unsigned long tsUs);
   // Статический adapter для PHY status observer.
-  static void handlePhyStatusObservedThunk(void* context, const char* eventName,
+  static void handlePhyStatusObservedThunk(void *context, const char *eventName,
                                            unsigned long tsUs,
                                            UBaseType_t priority,
                                            BaseType_t coreId,
                                            uint32_t auxValue);
   // Статический adapter для PHY frame observer.
-  static void handleFastFrameObservedThunk(void* context,
-                                           const machine::Frame& frame,
+  static void handleFastFrameObservedThunk(void *context,
+                                           const machine::Frame &frame,
                                            unsigned long finalizedAtMs);
   // Получает побайтный callback от PHY для TX loopback-логирования.
   void handlePhyTxObserved(uint32_t frameId, size_t byteIndex, uint8_t value,
                            uint8_t ninthBit, unsigned long tsUs);
   // Получает статус внутренней UART task.
-  void handlePhyStatusObserved(const char* eventName, unsigned long tsUs,
+  void handlePhyStatusObserved(const char *eventName, unsigned long tsUs,
                                UBaseType_t priority, BaseType_t coreId,
                                uint32_t auxValue);
 
-  ConnectionService& connectionService_;
+  ConnectionService &connectionService_;
   MachinePhy phy_;
   CashlessSession session_;
   volatile bool active_ = true;
@@ -854,6 +882,9 @@ class MdbService {
   uint8_t setupResponseExperimentResponseTime_ = 0;
   uint8_t setupResponseExperimentOptions_ = 0;
   String setupResponseExperimentLabel_;
+  volatile bool setupResponseVariantCycleEnabled_ = false;
+  volatile uint8_t setupResponseVariantIndex_ = 0;
+  volatile bool setupResponseVariantAccepted_ = false;
   String gatewayCompatExpectedFollowup_;
   String gatewayCompatRetryInterpretation_;
   String gatewayCompatLastOutcome_;
@@ -1005,8 +1036,8 @@ class MdbService {
   unsigned long deferredFastPathCashlessTxUs_ = 0;
   bool deferredFastPathCashlessEnabled_ = false;
   bool deferredFastPathFinalizeCreditFlow_ = false;
-  const char* deferredFastPathFinalizeStatus_ = nullptr;
-  const char* deferredFastPathFinalizeReason_ = nullptr;
+  const char *deferredFastPathFinalizeStatus_ = nullptr;
+  const char *deferredFastPathFinalizeReason_ = nullptr;
   uint8_t vendApprovedPayload_[3] = {};
   uint8_t vendApprovedFrame_[4] = {};
   size_t vendApprovedFrameLength_ = 0;
@@ -1022,6 +1053,7 @@ class MdbService {
   unsigned long fastHandledFrameEndedUs_ = 0;
   uint8_t fastHandledFrameAddress_ = 0;
   uint8_t fastHandledFrameCommand_ = 0;
+  unsigned long coinCompatPollFastHandledAtUs_ = 0;
   bool pendingCashlessSplitPrefixActive_ = false;
   machine::Frame pendingCashlessSplitPrefixFrame_ = {};
   unsigned long pendingCashlessSplitPrefixCapturedAtMs_ = 0;
@@ -1034,4 +1066,9 @@ class MdbService {
   SniffFrameRecord sniffHistory_[kSniffHistorySize] = {};
   size_t sniffHistoryNext_ = 0;
   size_t sniffHistoryCount_ = 0;
+
+  bool postEnableExpansionProbePending_ = false;
+  unsigned long postEnableExpansionProbeAtMs_ = 0;
+  uint8_t postEnableExpansionProbeCount_ = 0;
+  MdbOperatingMode mdbOperatingMode_ = MdbOperatingMode::Cashless;
 };

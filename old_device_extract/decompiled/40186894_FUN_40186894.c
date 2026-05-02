@@ -1,0 +1,22 @@
+// Function : FUN_40186894
+// Address  : 0x40186894
+// Size     : 41 bytes
+
+
+int FUN_40186894(byte *param_1)
+
+{
+  int iVar1;
+  int iVar2;
+  
+  iVar2 = 0x1e;
+  if ((param_1[1] & 3) != 3) {
+    iVar2 = 0x18;
+  }
+  iVar1 = iVar2 + 2;
+  if ((*param_1 & 0x8c) != 0x88) {
+    iVar1 = iVar2;
+  }
+  return iVar1;
+}
+
