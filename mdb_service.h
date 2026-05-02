@@ -541,7 +541,19 @@ private:
                     bool cashlessFastReplyHandled = false);
   // Обрабатывает команды, адресованные coin changer emulator.
   bool handleCoinChangerCommand(const machine::Frame &frame, unsigned long now,
-                                bool fastPath);
+                                bool fastPath,
+                                bool coinFamily08AddressBypass = false);
+  // Ранний dispatch по raw MDB address family до фильтрации текущего режима.
+  bool handleRawMdbAddressFamily(const machine::Frame &frame, unsigned long now,
+                                 bool fastPath);
+  // Обрабатывает coin-like family 0x08..0x0F.
+  bool handleCoinLikeFamily08Command(uint8_t command,
+                                     const machine::Frame &frame,
+                                     unsigned long now, bool fastPath);
+  // Обрабатывает bill-validator family 0x30..0x37.
+  bool handleBillValidatorFamily30Command(uint8_t command,
+                                          const machine::Frame &frame,
+                                          unsigned long now, bool fastPath);
   // Разбирает cashless-команды, адресованные нашему устройству.
   void handleCashlessCommand(uint8_t address, uint8_t command,
                              const machine::Frame &frame, unsigned long now);
@@ -644,6 +656,18 @@ private:
   // Отправляет EXPANSION diagnostic status response coin changer emulator.
   unsigned long sendCoinChangerDiagnosticStatusResponse(
       const char *responseReason = "coin_diag_status");
+  // Отправляет SETUP response для MDB bill-validator family 0x30.
+  unsigned long sendBillValidatorSetupResponse(
+      const char *responseReason = "bill_validator_setup_response");
+  // Отправляет POLL response для MDB bill-validator family 0x30.
+  unsigned long sendBillValidatorPollResponse(
+      const char *responseReason = "bill_validator_poll_response");
+  // Отправляет STACKER STATUS response для MDB bill-validator family 0x30.
+  unsigned long sendBillValidatorStackerStatusResponse(
+      const char *responseReason = "bill_validator_stacker_status");
+  // Отправляет EXPANSION ID response для MDB bill-validator family 0x30.
+  unsigned long sendBillValidatorExpansionIdResponse(
+      const char *responseReason = "bill_validator_expansion_response");
   // Выбирает самый крупный разрешённый coin type для остатка платежа.
   bool selectCoinChangerCoinType(unsigned long remainingScaled,
                                  uint8_t &coinType,
@@ -799,6 +823,9 @@ private:
   unsigned long coinChangerQueuedAtMs_ = 0;
   String coinChangerPendingTransactionId_;
   String coinChangerAwaitingVmcTransactionId_;
+  bool billValidatorJustResetPending_ = true;
+  uint16_t billValidatorBillEnableMask_ = 0;
+  uint16_t billValidatorEscrowEnableMask_ = 0;
   bool isReaderEnabled_ = false;
   bool cashlessJustResetPending_ = true;
   bool cashlessSetupSeen_ = false;

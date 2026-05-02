@@ -32,6 +32,22 @@ namespace
   constexpr uint8_t kCoinChangerJustResetStatus = 0x0B;
   constexpr uint8_t kCoinChangerDiagnosticOkMain = 0x03;
   constexpr uint8_t kCoinChangerDiagnosticOkSub = 0x00;
+  constexpr uint8_t kCoinLikeFamily08Base = 0x08;
+  constexpr uint8_t kCashlessFamily10Base = 0x10;
+  constexpr uint8_t kBillValidatorFamily30Base = 0x30;
+  constexpr uint8_t kBillValidatorResetCommand = 0x00;
+  constexpr uint8_t kBillValidatorSetupCommand = 0x01;
+  constexpr uint8_t kBillValidatorSecurityCommand = 0x02;
+  constexpr uint8_t kBillValidatorPollCommand = 0x03;
+  constexpr uint8_t kBillValidatorBillTypeCommand = 0x04;
+  constexpr uint8_t kBillValidatorEscrowCommand = 0x05;
+  constexpr uint8_t kBillValidatorStackerCommand = 0x06;
+  constexpr uint8_t kBillValidatorExpansionCommand = 0x07;
+  constexpr uint8_t kBillValidatorExpansionIdSubcommand = 0x00;
+  constexpr uint8_t kBillValidatorJustResetStatus = 0x06;
+  constexpr uint16_t kBillValidatorStackerCapacity = 0x0000;
+  constexpr uint16_t kBillValidatorSecurityLevels = 0x0000;
+  constexpr uint8_t kBillValidatorEscrowCapability = 0x00;
   static_assert(sizeof(kMdbCoinChangerManufacturer) == 4,
                 "Coin changer manufacturer code must stay 3 chars");
   static_assert(sizeof(kMdbCoinChangerSerial) == 13,
@@ -271,6 +287,20 @@ namespace
   bool isCashlessDevice1CommandByte(uint8_t value)
   {
     return value >= kCashlessDevice1BaseByte && value <= kCashlessDevice1LastByte;
+  }
+
+  bool rawAddressFamilyCommand(const machine::Frame &frame, uint8_t &raw,
+                               uint8_t &family, uint8_t &command)
+  {
+    if (frame.normalizedLength == 0 || frame.length == 0 ||
+        !frame.bytes[0].highBit)
+    {
+      return false;
+    }
+    raw = frame.normalized[0];
+    family = static_cast<uint8_t>(raw & 0xF8U);
+    command = static_cast<uint8_t>(raw & 0x07U);
+    return true;
   }
 
   bool looksLikeStartupResetMisdecode(const machine::Frame &frame)
@@ -985,6 +1015,9 @@ void MdbService::begin()
   experimentObservedPostFamilies_ = "";
   resetCoinChangerProtocolState(true);
   clearCoinChangerPendingPayment();
+  billValidatorJustResetPending_ = true;
+  billValidatorBillEnableMask_ = 0;
+  billValidatorEscrowEnableMask_ = 0;
   if (kMdbBootAsCoinChanger)
   {
     mdbOperatingMode_ = MdbOperatingMode::CoinChanger;
@@ -4577,6 +4610,21 @@ void MdbService::handleFastFrameObserved(const machine::Frame &frame,
     return;
   }
 
+  auto markFastHandled = [&]()
+  {
+    fastHandledFramePending_ = true;
+    fastHandledFrameEndedUs_ = frame.endedAtUs;
+    fastHandledFrameAddress_ =
+        frame.hasCandidateAddress ? frame.candidateAddress : cashlessAddress_;
+    fastHandledFrameCommand_ = frame.hasCandidateAddress ? frame.candidateCommand : 0;
+  };
+
+  if (handleRawMdbAddressFamily(frame, finalizedAtMs, true))
+  {
+    markFastHandled();
+    return;
+  }
+
   // Mode isolation: whitelist-based.
   // CoinChanger mode: handle frames addressed to addr 1 AND the non-standard
   //   compat poll byte 0xFE (which carries no MDB address but must be answered
@@ -4680,15 +4728,6 @@ void MdbService::handleFastFrameObserved(const machine::Frame &frame,
         frame.hasCandidateAddress ? frame.candidateCommand : 0;
     return;
   }
-
-  auto markFastHandled = [&]()
-  {
-    fastHandledFramePending_ = true;
-    fastHandledFrameEndedUs_ = frame.endedAtUs;
-    fastHandledFrameAddress_ =
-        frame.hasCandidateAddress ? frame.candidateAddress : cashlessAddress_;
-    fastHandledFrameCommand_ = frame.hasCandidateAddress ? frame.candidateCommand : 0;
-  };
 
   if (looksLikeStartupResetMisdecode(frame))
   {
@@ -9178,6 +9217,12 @@ void MdbService::processFrame(const machine::Frame &frame, unsigned long now,
     requeueCoinChangerAwaitingAcceptance("vmc_nak_after_local_credit");
   }
 
+  if (!cashlessFastReplyHandled &&
+      handleRawMdbAddressFamily(frame, now, false))
+  {
+    return;
+  }
+
   if (coinCompatTailIgnoreUntilUs_ > 0 && frame.endedAtUs > coinCompatTailIgnoreUntilUs_)
   {
     coinCompatTailIgnoreUntilUs_ = 0;
@@ -9413,18 +9458,224 @@ void MdbService::processFrame(const machine::Frame &frame, unsigned long now,
   }
 }
 
-bool MdbService::handleCoinChangerCommand(const machine::Frame &frame,
-                                          unsigned long now,
-                                          bool fastPath)
+bool MdbService::handleRawMdbAddressFamily(const machine::Frame &frame,
+                                           unsigned long now, bool fastPath)
 {
-  if (!frame.checksumValid || !frame.hasCandidateAddress ||
-      !matchesCoinChangerDialogueAddress(frame.candidateAddress,
-                                         frame.candidateCommand))
+  if (!frame.checksumValid)
   {
     return false;
   }
 
-  switch (frame.candidateCommand)
+  uint8_t raw = 0;
+  uint8_t family = 0;
+  uint8_t command = 0;
+  if (!rawAddressFamilyCommand(frame, raw, family, command))
+  {
+    return false;
+  }
+
+  if (family == kCoinLikeFamily08Base)
+  {
+    return handleCoinLikeFamily08Command(command, frame, now, fastPath);
+  }
+
+  if (family == kBillValidatorFamily30Base)
+  {
+    return handleBillValidatorFamily30Command(command, frame, now, fastPath);
+  }
+
+  if (family == kCashlessFamily10Base)
+  {
+    return false;
+  }
+
+  return false;
+}
+
+bool MdbService::handleCoinLikeFamily08Command(uint8_t command,
+                                               const machine::Frame &frame,
+                                               unsigned long now,
+                                               bool fastPath)
+{
+  if (!kMdbCoinChangerEnabled)
+  {
+    return false;
+  }
+  if (command > kCoinChangerExpansionCommand)
+  {
+    return false;
+  }
+  return handleCoinChangerCommand(frame, now, fastPath, true);
+}
+
+bool MdbService::handleBillValidatorFamily30Command(
+    uint8_t command, const machine::Frame &frame, unsigned long now,
+    bool fastPath)
+{
+  (void)now;
+  if (!frame.checksumValid)
+  {
+    return false;
+  }
+
+  switch (command)
+  {
+  case kBillValidatorResetCommand:
+  {
+    billValidatorJustResetPending_ = true;
+    billValidatorBillEnableMask_ = 0;
+    billValidatorEscrowEnableMask_ = 0;
+    const unsigned long firstTxUs = sendAckRaw("bill_validator_reset_ack");
+    emitEvent("bill_validator_reset_seen",
+              String("{\"timestamp_us\":") + frame.endedAtUs +
+                  ",\"tx_ts_us\":" + firstTxUs +
+                  ",\"fast_path\":" + boolToJson(fastPath) +
+                  ",\"raw_hex\":\"" + machine::normalizedHex(frame) + "\"}");
+    stateDirty_ = true;
+    return true;
+  }
+
+  case kBillValidatorSetupCommand:
+  {
+    const unsigned long firstTxUs =
+        sendBillValidatorSetupResponse("bill_validator_setup_response");
+    billValidatorJustResetPending_ = true;
+    emitEvent("bill_validator_setup_response",
+              String("{\"timestamp_us\":") + firstTxUs +
+                  ",\"fast_path\":" + boolToJson(fastPath) +
+                  ",\"raw_hex\":\"" + machine::normalizedHex(frame) + "\"}");
+    stateDirty_ = true;
+    return true;
+  }
+
+  case kBillValidatorSecurityCommand:
+  {
+    const unsigned long firstTxUs = sendAckRaw("bill_validator_security_ack");
+    emitEvent("bill_validator_security_ack",
+              String("{\"timestamp_us\":") + frame.endedAtUs +
+                  ",\"tx_ts_us\":" + firstTxUs +
+                  ",\"fast_path\":" + boolToJson(fastPath) + "}");
+    return true;
+  }
+
+  case kBillValidatorPollCommand:
+  {
+    const bool justResetPendingBefore = billValidatorJustResetPending_;
+    const unsigned long firstTxUs =
+        sendBillValidatorPollResponse("bill_validator_poll_response");
+    emitEvent("bill_validator_poll_response",
+              String("{\"timestamp_us\":") + firstTxUs +
+                  ",\"fast_path\":" + boolToJson(fastPath) +
+                  ",\"just_reset_pending\":" +
+                  boolToJson(justResetPendingBefore) + "}");
+    return true;
+  }
+
+  case kBillValidatorBillTypeCommand:
+  {
+    if (frame.normalizedLength >= 6)
+    {
+      billValidatorBillEnableMask_ =
+          static_cast<uint16_t>((frame.normalized[1] << 8) |
+                                frame.normalized[2]);
+      billValidatorEscrowEnableMask_ =
+          static_cast<uint16_t>((frame.normalized[3] << 8) |
+                                frame.normalized[4]);
+      stateDirty_ = true;
+    }
+    const unsigned long firstTxUs = sendAckRaw("bill_validator_type_ack");
+    emitEvent("bill_validator_type_configured",
+              String("{\"timestamp_us\":") + frame.endedAtUs +
+                  ",\"tx_ts_us\":" + firstTxUs +
+                  ",\"fast_path\":" + boolToJson(fastPath) +
+                  ",\"bill_enable_mask\":" + billValidatorBillEnableMask_ +
+                  ",\"escrow_enable_mask\":" + billValidatorEscrowEnableMask_ + "}");
+    return true;
+  }
+
+  case kBillValidatorEscrowCommand:
+  {
+    const unsigned long firstTxUs = sendAckRaw("bill_validator_escrow_ack");
+    emitEvent("bill_validator_escrow_ack",
+              String("{\"timestamp_us\":") + frame.endedAtUs +
+                  ",\"tx_ts_us\":" + firstTxUs +
+                  ",\"fast_path\":" + boolToJson(fastPath) + "}");
+    return true;
+  }
+
+  case kBillValidatorStackerCommand:
+  {
+    const unsigned long firstTxUs =
+        sendBillValidatorStackerStatusResponse("bill_validator_stacker_status");
+    emitEvent("bill_validator_stacker_status",
+              String("{\"timestamp_us\":") + firstTxUs +
+                  ",\"fast_path\":" + boolToJson(fastPath) + "}");
+    return true;
+  }
+
+  case kBillValidatorExpansionCommand:
+  {
+    const uint8_t subcommand =
+        frame.normalizedLength >= 2 ? frame.normalized[1]
+                                    : kBillValidatorExpansionIdSubcommand;
+    if (subcommand == kBillValidatorExpansionIdSubcommand)
+    {
+      const unsigned long firstTxUs =
+          sendBillValidatorExpansionIdResponse("bill_validator_expansion_response");
+      emitEvent("bill_validator_expansion_response",
+                String("{\"timestamp_us\":") + firstTxUs +
+                    ",\"fast_path\":" + boolToJson(fastPath) +
+                    ",\"manufacturer\":\"" +
+                    escapeForJson(String(kMdbCoinChangerManufacturer)) +
+                    "\",\"model\":\"" +
+                    escapeForJson(String(kMdbCoinChangerModel)) + "\"}");
+      return true;
+    }
+
+    const unsigned long firstTxUs = sendAckRaw("bill_validator_expansion_ack");
+    emitEvent("bill_validator_expansion_ack",
+              String("{\"timestamp_us\":") + frame.endedAtUs +
+                  ",\"tx_ts_us\":" + firstTxUs +
+                  ",\"fast_path\":" + boolToJson(fastPath) +
+                  ",\"subcommand\":" + static_cast<unsigned int>(subcommand) +
+                  "}");
+    return true;
+  }
+
+  default:
+    break;
+  }
+
+  return false;
+}
+
+bool MdbService::handleCoinChangerCommand(const machine::Frame &frame,
+                                          unsigned long now,
+                                          bool fastPath,
+                                          bool coinFamily08AddressBypass)
+{
+  uint8_t raw = 0;
+  uint8_t family = 0;
+  uint8_t command = 0;
+  const bool coinFamily08 =
+      rawAddressFamilyCommand(frame, raw, family, command) &&
+      family == kCoinLikeFamily08Base;
+  const bool standardCoinAddress =
+      frame.hasCandidateAddress &&
+      matchesCoinChangerDialogueAddress(frame.candidateAddress,
+                                        frame.candidateCommand);
+  if (!frame.checksumValid || !frame.hasCandidateAddress ||
+      !(standardCoinAddress || (coinFamily08AddressBypass && coinFamily08)))
+  {
+    return false;
+  }
+
+  if (!coinFamily08AddressBypass)
+  {
+    command = frame.candidateCommand;
+  }
+
+  switch (command)
   {
   case kCoinChangerResetCommand:
   {
@@ -12533,6 +12784,124 @@ unsigned long MdbService::sendCoinChangerDiagnosticStatusResponse(
   const size_t length =
       mdb::buildSlaveBlock(payload, sizeof(payload), frame, sizeof(frame));
   return transmitResponseFrame(responseReason, "coin_diag_status", frame, length);
+}
+
+unsigned long MdbService::sendBillValidatorSetupResponse(
+    const char *responseReason)
+{
+  const uint8_t payload[] = {
+      0x01,
+      kMdbCoinChangerCurrencyCountryCodeHi,
+      kMdbCoinChangerCurrencyCountryCodeLo,
+      static_cast<uint8_t>((kMdbCoinChangerScalingFactor >> 8) & 0xFFU),
+      static_cast<uint8_t>(kMdbCoinChangerScalingFactor & 0xFFU),
+      kMdbCoinChangerDecimalPlaces,
+      static_cast<uint8_t>((kBillValidatorStackerCapacity >> 8) & 0xFFU),
+      static_cast<uint8_t>(kBillValidatorStackerCapacity & 0xFFU),
+      static_cast<uint8_t>((kBillValidatorSecurityLevels >> 8) & 0xFFU),
+      static_cast<uint8_t>(kBillValidatorSecurityLevels & 0xFFU),
+      kBillValidatorEscrowCapability,
+      kMdbCoinChangerCoinCredits[0],
+      kMdbCoinChangerCoinCredits[1],
+      kMdbCoinChangerCoinCredits[2],
+      kMdbCoinChangerCoinCredits[3],
+      kMdbCoinChangerCoinCredits[4],
+      kMdbCoinChangerCoinCredits[5],
+      kMdbCoinChangerCoinCredits[6],
+      kMdbCoinChangerCoinCredits[7],
+      kMdbCoinChangerCoinCredits[8],
+      kMdbCoinChangerCoinCredits[9],
+      kMdbCoinChangerCoinCredits[10],
+      kMdbCoinChangerCoinCredits[11],
+      kMdbCoinChangerCoinCredits[12],
+      kMdbCoinChangerCoinCredits[13],
+      kMdbCoinChangerCoinCredits[14],
+      kMdbCoinChangerCoinCredits[15],
+  };
+  static_assert(sizeof(payload) == 27,
+                "Bill validator setup payload must stay 27 bytes");
+  uint8_t frame[sizeof(payload) + 1] = {};
+  const size_t length =
+      mdb::buildSlaveBlock(payload, sizeof(payload), frame, sizeof(frame));
+  return transmitResponseFrame(responseReason, "bill_validator_setup_response",
+                               frame, length);
+}
+
+unsigned long MdbService::sendBillValidatorPollResponse(
+    const char *responseReason)
+{
+  if (billValidatorJustResetPending_)
+  {
+    billValidatorJustResetPending_ = false;
+    stateDirty_ = true;
+    const uint8_t payload[] = {kBillValidatorJustResetStatus};
+    uint8_t frame[sizeof(payload) + 1] = {};
+    const size_t length =
+        mdb::buildSlaveBlock(payload, sizeof(payload), frame, sizeof(frame));
+    return transmitResponseFrame(responseReason, "bill_validator_poll_just_reset",
+                                 frame, length);
+  }
+
+  return sendAckRaw(responseReason);
+}
+
+unsigned long MdbService::sendBillValidatorStackerStatusResponse(
+    const char *responseReason)
+{
+  const uint8_t payload[] = {0x00, 0x00};
+  uint8_t frame[sizeof(payload) + 1] = {};
+  const size_t length =
+      mdb::buildSlaveBlock(payload, sizeof(payload), frame, sizeof(frame));
+  return transmitResponseFrame(responseReason, "bill_validator_stacker_status",
+                               frame, length);
+}
+
+unsigned long MdbService::sendBillValidatorExpansionIdResponse(
+    const char *responseReason)
+{
+  const uint8_t payload[] = {
+      static_cast<uint8_t>(kMdbCoinChangerManufacturer[0]),
+      static_cast<uint8_t>(kMdbCoinChangerManufacturer[1]),
+      static_cast<uint8_t>(kMdbCoinChangerManufacturer[2]),
+      static_cast<uint8_t>(kMdbCoinChangerSerial[0]),
+      static_cast<uint8_t>(kMdbCoinChangerSerial[1]),
+      static_cast<uint8_t>(kMdbCoinChangerSerial[2]),
+      static_cast<uint8_t>(kMdbCoinChangerSerial[3]),
+      static_cast<uint8_t>(kMdbCoinChangerSerial[4]),
+      static_cast<uint8_t>(kMdbCoinChangerSerial[5]),
+      static_cast<uint8_t>(kMdbCoinChangerSerial[6]),
+      static_cast<uint8_t>(kMdbCoinChangerSerial[7]),
+      static_cast<uint8_t>(kMdbCoinChangerSerial[8]),
+      static_cast<uint8_t>(kMdbCoinChangerSerial[9]),
+      static_cast<uint8_t>(kMdbCoinChangerSerial[10]),
+      static_cast<uint8_t>(kMdbCoinChangerSerial[11]),
+      static_cast<uint8_t>(kMdbCoinChangerModel[0]),
+      static_cast<uint8_t>(kMdbCoinChangerModel[1]),
+      static_cast<uint8_t>(kMdbCoinChangerModel[2]),
+      static_cast<uint8_t>(kMdbCoinChangerModel[3]),
+      static_cast<uint8_t>(kMdbCoinChangerModel[4]),
+      static_cast<uint8_t>(kMdbCoinChangerModel[5]),
+      static_cast<uint8_t>(kMdbCoinChangerModel[6]),
+      static_cast<uint8_t>(kMdbCoinChangerModel[7]),
+      static_cast<uint8_t>(kMdbCoinChangerModel[8]),
+      static_cast<uint8_t>(kMdbCoinChangerModel[9]),
+      static_cast<uint8_t>(kMdbCoinChangerModel[10]),
+      static_cast<uint8_t>(kMdbCoinChangerModel[11]),
+      0x01,
+      0x00,
+      static_cast<uint8_t>((kMdbCoinChangerOptionalFeatureBits >> 24) & 0xFFU),
+      static_cast<uint8_t>((kMdbCoinChangerOptionalFeatureBits >> 16) & 0xFFU),
+      static_cast<uint8_t>((kMdbCoinChangerOptionalFeatureBits >> 8) & 0xFFU),
+      static_cast<uint8_t>(kMdbCoinChangerOptionalFeatureBits & 0xFFU),
+  };
+  static_assert(sizeof(payload) == 33,
+                "Bill validator expansion ID payload must stay 33 bytes");
+  uint8_t frame[sizeof(payload) + 1] = {};
+  const size_t length =
+      mdb::buildSlaveBlock(payload, sizeof(payload), frame, sizeof(frame));
+  return transmitResponseFrame(responseReason,
+                               "bill_validator_expansion_response", frame,
+                               length);
 }
 
 unsigned long MdbService::sendCashlessPollReply(unsigned long now,
