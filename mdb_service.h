@@ -545,7 +545,14 @@ private:
                                 bool coinFamily08AddressBypass = false);
   // Ранний dispatch по raw MDB address family до фильтрации текущего режима.
   bool handleRawMdbAddressFamily(const machine::Frame &frame, unsigned long now,
-                                 bool fastPath);
+                                 bool fastPath, bool emitTelemetry);
+  // Логирует первый raw MDB byte/family после решения/TX, чтобы не тормозить hot path.
+  void emitRawMdbFamilySeen(const machine::Frame &frame, bool handled);
+  // Логирует одиночный compat-tail byte, на который намеренно не отвечаем.
+  void emitCompatTailIgnored(const machine::Frame &frame, const char *reason);
+  // Логирует отключённый FE compat poll без TX.
+  void emitFeCompatIgnoredPreHandshake(const machine::Frame &frame,
+                                       const char *reason);
   // Обрабатывает coin-like family 0x08..0x0F.
   bool handleCoinLikeFamily08Command(uint8_t command,
                                      const machine::Frame &frame,
