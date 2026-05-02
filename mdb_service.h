@@ -827,6 +827,10 @@ private:
   unsigned long coinChangerAwaitingVmcAmountMinor_ = 0;
   unsigned long coinChangerAwaitingVmcScaled_ = 0;
   unsigned long coinChangerLastCreditReplyTxUs_ = 0;
+  // Legacy 5x-repeat state: bytes to resend, remaining repeat count, per-type counter.
+  uint8_t coinChangerCreditRepeatPayload_[2] = {};
+  uint8_t coinChangerCreditRepeatRemaining_ = 0;
+  uint8_t coinChangerPerTypeSendCount_[16] = {};
   unsigned long coinChangerQueuedAtMs_ = 0;
   String coinChangerPendingTransactionId_;
   String coinChangerAwaitingVmcTransactionId_;

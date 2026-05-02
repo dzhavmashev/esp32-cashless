@@ -197,28 +197,47 @@ namespace
   constexpr uint8_t kObservedGatewaySetupChecksum = 0x1D;
   constexpr uint8_t kObservedGatewayPollByte = 0x1A;
   constexpr uint8_t kObservedCoinChangerPollByte = 0xFE;
-  constexpr bool kReplyToObservedFeCompatPoll = false;
+  constexpr bool kReplyToObservedFeCompatPoll = true;
   constexpr uint8_t kObservedGatewayExpansionByte = 0x19;
   constexpr uint8_t kObservedGatewayExpansionPayload1 = 0x01;
   constexpr uint8_t kObservedGatewayExpansionChecksum = 0x1A;
 
-  struct SetupResponseVariant
-  {
-    uint8_t currencyCountryCodeHi;
-    uint8_t currencyCountryCodeLo;
-    uint8_t responseTime;
-    uint8_t options;
-    const char *label;
-  };
+  struct SetupResponseVariant {
+  uint8_t currencyCountryCodeHi;
+  uint8_t currencyCountryCodeLo;
+  uint8_t responseTime;
+  uint8_t options;
+  const char *label;
+  const char *currencyProfileLabel;
+  uint8_t payload[24];
+  uint8_t payloadLength;
+};
 
-  constexpr SetupResponseVariant kSetupResponseVariants[] = {
-      {kGatewayAltKgsCurrencyCountryCodeHi, kGatewayAltKgsCurrencyCountryCodeLo,
-       kCashlessAppMaxResponseTime, 0x08, "gateway_alt_kgs1417_rt30_opt08"},
-  };
+constexpr SetupResponseVariant kSetupResponseVariants[] = {
+  // A: current short gateway/cashless response.
+  {0x16, 0x43, 0x1E, 0x08, "A_legacy1643_rt30_opt08", "legacy_1643", {0x03, 0x16, 0x43, 0x64, 0x02, 0x1E, 0x08, 0x00}, 7},
+  // B: response_time=00, options=08.
+  {0x16, 0x43, 0x00, 0x08, "B_legacy1643_rt00_opt08", "legacy_1643", {0x03, 0x16, 0x43, 0x64, 0x02, 0x00, 0x08, 0x00}, 7},
+  // C: response_time=05, options=08.
+  {0x16, 0x43, 0x05, 0x08, "C_legacy1643_rt05_opt08", "legacy_1643", {0x03, 0x16, 0x43, 0x64, 0x02, 0x05, 0x08, 0x00}, 7},
+  // D: response_time=1E, options=01.
+  {0x16, 0x43, 0x1E, 0x01, "D_legacy1643_rt30_opt01", "legacy_1643", {0x03, 0x16, 0x43, 0x64, 0x02, 0x1E, 0x01, 0x00}, 7},
+  // E: response_time=05, options=01.
+  {0x16, 0x43, 0x05, 0x01, "E_legacy1643_rt05_opt01", "legacy_1643", {0x03, 0x16, 0x43, 0x64, 0x02, 0x05, 0x01, 0x00}, 7},
+  // F: response_time=00, options=00.
+  {0x16, 0x43, 0x00, 0x00, "F_legacy1643_rt00_opt00", "legacy_1643", {0x03, 0x16, 0x43, 0x64, 0x02, 0x00, 0x00, 0x00}, 7},
+  // G: first observed legacy08 extra bytes after decimals: 00 0F AC.
+  {0x16, 0x43, 0x00, 0x0F, "G_legacy08_prefix_001FAC", "legacy_1643", {0x03, 0x16, 0x43, 0x64, 0x02, 0x00, 0x0F, 0xAC}, 8},
 
-  constexpr uint8_t kSetupResponseVariantCount =
-      static_cast<uint8_t>(sizeof(kSetupResponseVariants) /
-                           sizeof(kSetupResponseVariants[0]));
+  // H: full legacy08 setup response length 0x17 (23 bytes).
+  // Decompiled firmware writes: 03 16 43 64 02 00 0F AC and sends len=0x17.
+  // The response buffer is zeroed during init, so this experiment zero-fills the tail.
+  {0x16, 0x43, 0x00, 0x0F, "H_legacy08_full23_zero_tail", "legacy_1643",
+   {0x03, 0x16, 0x43, 0x64, 0x02, 0x00, 0x0F, 0xAC,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 23},
+};
+constexpr uint8_t kSetupResponseVariantCount = static_cast<uint8_t>(sizeof(kSetupResponseVariants) / sizeof(kSetupResponseVariants[0]));
   constexpr uint8_t kCoinCompatTailByteA = 0xFC;
   constexpr uint8_t kCoinCompatTailByteB = 0x7C;
   constexpr uint8_t kCoinCompatTailByteC = 0x1C;
@@ -4636,6 +4655,29 @@ void MdbService::handleFastFrameObserved(const machine::Frame &frame,
     fastHandledFrameCommand_ = frame.hasCandidateAddress ? frame.candidateCommand : 0;
   };
 
+  // 0xFC = compat reader-control ENABLE (addr=31 cmd=4, proprietary gateway byte).
+  // VMC sends it after SETUP CONFIG to enable the reader session. Must be caught
+  // before isNoResponseCompatTailByte() which unconditionally drops 0xFC.
+  if (kMdbCashlessEnabled && frame.normalizedLength == 1 &&
+      frame.normalized[0] == kCoinCompatTailByteA &&
+      cashlessSetupSeen_)
+  {
+    deferredFastPathCashlessTxUs_ = sendAckRaw("fc_compat_reader_enable");
+    isReaderEnabled_ = true;
+    cashlessJustResetPending_ = false;
+    beginSessionPending_ = false;
+    beginSessionAmountMinor_ = 0;
+    wrapperStandardFlowEntered_ = true;
+    wrapperExpectedNextRxKind_ = "POLL_OR_SETUP_RESTART";
+    wrapperExpectedNextAction_ = "WAIT_FOR_POLL_OR_SETUP_RESTART";
+    wrapperContinuationKind_ = "fc_compat_reader_enable";
+    setWrapperFsmState(WrapperFsmState::ContinuedToStandardFlow,
+                       "fc_compat_reader_enable", frame.endedAtUs);
+    stateDirty_ = true;
+    markFastHandled();
+    return;
+  }
+
   if (frame.normalizedLength == 1 &&
       isNoResponseCompatTailByte(frame.normalized[0]))
   {
@@ -4835,18 +4877,11 @@ void MdbService::handleFastFrameObserved(const machine::Frame &frame,
       resetAfterSetupRetryCount_++;
     }
     resetSeenCount_++;
-    if (setupResponseVariantCycleEnabled_ && !setupResponseVariantAccepted_ &&
-        lastSetupResponseTxUs_ > 0)
-    {
-      setupResponseVariantIndex_ =
-          (setupResponseVariantIndex_ + 1U) % kSetupResponseVariantCount;
-      emitEvent("setup_response_variant_advanced",
-                String("{\"index\":") + setupResponseVariantIndex_ +
-                    ",\"label\":\"" +
-                    kSetupResponseVariants[setupResponseVariantIndex_].label +
-                    "\",\"count\":" + kSetupResponseVariantCount +
-                    ",\"fast_path\":true}");
-    }
+    // Disabled by legacy08 full setup sweep patch.
+  // The forced advance immediately after setup_response_variant_used is the
+  // single source of truth for manual A/B/C/... probing. The old conditional
+  // advance could jump over variants after reset/timeout and made the sweep noisy.
+
     lastResetTsUs_ = frame.endedAtUs;
     lastResetAckPreparedUs_ = ackPrepareUs;
     lastPollAfterResetTsUs_ = 0;
@@ -4985,7 +5020,8 @@ void MdbService::handleFastFrameObserved(const machine::Frame &frame,
     const bool justResetPendingBefore = coinChangerJustResetPending_;
     if (coinChangerAwaitingVmcScaled_ > 0 &&
         coinChangerLastCreditReplyTxUs_ > 0 &&
-        frame.endedAtUs >= coinChangerLastCreditReplyTxUs_)
+        frame.endedAtUs >= coinChangerLastCreditReplyTxUs_ &&
+        coinChangerCreditRepeatRemaining_ == 0)
     {
       const unsigned long confirmedScaled = coinChangerAwaitingVmcScaled_;
       emitEvent("coin_reply_followup_poll_seen",
@@ -5966,6 +6002,8 @@ void MdbService::resetCoinChangerProtocolState(bool justResetPending)
   lastCoinCompatPollReplyTxUs_ = 0;
   coinCompatTailIgnoreUntilUs_ = 0;
   coinChangerLastCreditReplyTxUs_ = 0;
+  coinChangerCreditRepeatRemaining_ = 0;
+  memset(coinChangerPerTypeSendCount_, 0, sizeof(coinChangerPerTypeSendCount_));
   coinCompatPollFastHandledAtUs_ = 0;
 }
 
@@ -5976,6 +6014,7 @@ void MdbService::clearCoinChangerPendingPayment()
   coinChangerAwaitingVmcAmountMinor_ = 0;
   coinChangerAwaitingVmcScaled_ = 0;
   coinChangerLastCreditReplyTxUs_ = 0;
+  coinChangerCreditRepeatRemaining_ = 0;
   coinChangerQueuedAtMs_ = 0;
   coinChangerPendingTransactionId_ = "";
   coinChangerAwaitingVmcTransactionId_ = "";
@@ -9233,6 +9272,12 @@ void MdbService::processFrame(const machine::Frame &frame, unsigned long now,
   if (frame.normalizedLength == 1 &&
       isNoResponseCompatTailByte(frame.normalized[0]))
   {
+    // If the fast path already handled 0xFC as compat reader-control enable, skip
+    // the tail-ignored log so it doesn't appear alongside the ACK already sent.
+    if (cashlessFastReplyHandled && frame.normalized[0] == kCoinCompatTailByteA)
+    {
+      return;
+    }
     emitCompatTailIgnored(
         frame, frame.normalized[0] == kCoinCompatTailByteA
                    ? "fc_before_reader_control"
@@ -9294,6 +9339,7 @@ void MdbService::processFrame(const machine::Frame &frame, unsigned long now,
                   coinChangerAwaitingVmcScaled_ +
                   ",\"transaction_id\":\"" +
                   escapeForJson(coinChangerPendingTransactionId_) + "\"}");
+    coinChangerCreditRepeatRemaining_ = 0;
     requeueCoinChangerAwaitingAcceptance("vmc_nak_after_local_credit");
   }
 
@@ -9389,7 +9435,8 @@ void MdbService::processFrame(const machine::Frame &frame, unsigned long now,
     const bool justResetPendingBefore = coinChangerJustResetPending_;
     if (coinChangerAwaitingVmcScaled_ > 0 &&
         coinChangerLastCreditReplyTxUs_ > 0 &&
-        frame.endedAtUs >= coinChangerLastCreditReplyTxUs_)
+        frame.endedAtUs >= coinChangerLastCreditReplyTxUs_ &&
+        coinChangerCreditRepeatRemaining_ == 0)
     {
       emitEvent("coin_reply_followup_poll_seen",
                 String("{\"compat_mode\":true,\"rx_ts_us\":") +
@@ -9936,7 +9983,8 @@ bool MdbService::handleCoinChangerCommand(const machine::Frame &frame,
   case kCoinChangerPollCommand:
     if (coinChangerAwaitingVmcScaled_ > 0 &&
         coinChangerLastCreditReplyTxUs_ > 0 &&
-        frame.endedAtUs >= coinChangerLastCreditReplyTxUs_)
+        frame.endedAtUs >= coinChangerLastCreditReplyTxUs_ &&
+        coinChangerCreditRepeatRemaining_ == 0)
     {
       emitEvent("coin_reply_followup_poll_seen",
                 String("{\"compat_mode\":false,\"rx_ts_us\":") +
@@ -12346,61 +12394,44 @@ unsigned long MdbService::sendReaderSetupResponse(unsigned long rxEndedUs,
   // Gateway wrapper SETUP must use the active gateway profile first.
   // This prevents setup-response variant cycling / experiment overrides from
   // silently downgrading Application Maximum Response Time back to 0x03.
-  const uint8_t responseTime =
-      currentSetupResponseGatewayCompat_ ? gatewayCompatResponseTime()
-      : activeVariant                    ? activeVariant->responseTime
-      : useSetupResponseExperiment       ? setupResponseExperimentResponseTime_
-                                         : kCashlessAppMaxResponseTime;
+  const bool useSetupResponseVariant = activeVariant != nullptr;
+const uint8_t responseTime = useSetupResponseVariant
+    ? activeVariant->responseTime
+    : currentSetupResponseGatewayCompat_ ? gatewayCompatResponseTime() : useSetupResponseExperiment ? setupResponseExperimentResponseTime_ : kCashlessAppMaxResponseTime;
+const uint8_t options = useSetupResponseVariant
+    ? activeVariant->options
+    : currentSetupResponseGatewayCompat_ ? gatewayCompatResponseOptions() : useSetupResponseExperiment ? setupResponseExperimentOptions_ : 0x00;
+const uint8_t currencyCountryCodeHi = useSetupResponseVariant
+    ? activeVariant->currencyCountryCodeHi
+    : currentSetupResponseGatewayCompat_ ? gatewayCompatCurrencyCountryCodeHi() : useSetupResponseExperiment ? setupResponseExperimentCurrencyCountryCodeHi_ : kCashlessCurrencyCountryCodeHi;
+const uint8_t currencyCountryCodeLo = useSetupResponseVariant
+    ? activeVariant->currencyCountryCodeLo
+    : currentSetupResponseGatewayCompat_ ? gatewayCompatCurrencyCountryCodeLo() : useSetupResponseExperiment ? setupResponseExperimentCurrencyCountryCodeLo_ : kCashlessCurrencyCountryCodeLo;
 
-  const uint8_t options =
-      currentSetupResponseGatewayCompat_ ? gatewayCompatResponseOptions()
-      : activeVariant                    ? activeVariant->options
-      : useSetupResponseExperiment       ? setupResponseExperimentOptions_
-                                         : 0x00;
+uint8_t selectedPayload[24] = {};
+size_t selectedPayloadLength = 0;
+if (useSetupResponseVariant) {
+  selectedPayloadLength = activeVariant->payloadLength <= sizeof(selectedPayload) ? activeVariant->payloadLength : sizeof(selectedPayload);
+  for (size_t i = 0; i < selectedPayloadLength; ++i) {
+    selectedPayload[i] = activeVariant->payload[i];
+  }
+} else {
+  selectedPayload[0] = kCashlessLevel;
+  selectedPayload[1] = currencyCountryCodeHi;
+  selectedPayload[2] = currencyCountryCodeLo;
+  selectedPayload[3] = kCashlessScalingFactor;
+  selectedPayload[4] = kCashlessDecimalPlaces;
+  selectedPayload[5] = responseTime;
+  selectedPayload[6] = options;
+  selectedPayloadLength = 7;
+}
 
-  const uint8_t currencyCountryCodeHi =
-      currentSetupResponseGatewayCompat_ ? gatewayCompatCurrencyCountryCodeHi()
-      : activeVariant                    ? activeVariant->currencyCountryCodeHi
-      : useSetupResponseExperiment       ? setupResponseExperimentCurrencyCountryCodeHi_
-                                         : kCashlessCurrencyCountryCodeHi;
-
-  const uint8_t currencyCountryCodeLo =
-      currentSetupResponseGatewayCompat_ ? gatewayCompatCurrencyCountryCodeLo()
-      : activeVariant                    ? activeVariant->currencyCountryCodeLo
-      : useSetupResponseExperiment       ? setupResponseExperimentCurrencyCountryCodeLo_
-                                         : kCashlessCurrencyCountryCodeLo;
-
-  const uint8_t standardPayload[] = {
-      kCashlessLevel,
-      currencyCountryCodeHi,
-      currencyCountryCodeLo,
-      kCashlessScalingFactor,
-      kCashlessDecimalPlaces,
-      responseTime,
-      options,
-  };
-
-  const uint8_t gatewayPayload[] = {
-      kCashlessLevel,
-      currencyCountryCodeHi,
-      currencyCountryCodeLo,
-      kCashlessScalingFactor,
-      kCashlessDecimalPlaces,
-      responseTime,
-      options,
-  };
-
-  const bool useGatewayPayload = currentSetupResponseGatewayCompat_;
-  const uint8_t *payload = useGatewayPayload ? gatewayPayload : standardPayload;
-
-  const size_t payloadLength =
-      useGatewayPayload ? sizeof(gatewayPayload) : sizeof(standardPayload);
-
-  uint8_t frame[sizeof(gatewayPayload) + 1] = {};
-  size_t length =
-      mdb::buildSlaveBlock(payload, payloadLength, frame, sizeof(frame));
-
-  const uint8_t expectedChecksum = mdb::checksum(payload, payloadLength);
+const bool useGatewayPayload = currentSetupResponseGatewayCompat_;
+const uint8_t *payload = selectedPayload;
+const size_t payloadLength = selectedPayloadLength;
+uint8_t frame[sizeof(selectedPayload) + 1] = {};
+size_t length = mdb::buildSlaveBlock(payload, payloadLength, frame, sizeof(frame));
+const uint8_t expectedChecksum = mdb::checksum(payload, payloadLength);
 
   // Guard без emitEvent до TX. Если вдруг builder дал сбой — чиним локально
   // и продолжаем максимально быстро.
@@ -12449,33 +12480,18 @@ unsigned long MdbService::sendReaderSetupResponse(unsigned long rxEndedUs,
       transmitResponseFrame(responseReason, "setup_response", frame, length,
                             rxEndedUs);
 
-  setupResponseProfileId_ =
-      useSetupResponseExperiment
-          ? String("setup_experiment_") + setupResponseExperimentLabel_
-          : (currentSetupResponseGatewayCompat_
-                 ? String(gatewayCompatResponseProfileIdLabel())
-                 : String("standard_setup_default"));
-
-  setupResponseSuspectField_ =
-      useSetupResponseExperiment
-          ? String("currency_max_response_time_options_sweep")
-          : (currentSetupResponseGatewayCompat_
-                 ? String(gatewayCompatSemanticSuspectFieldLabel())
-                 : String("none"));
-
-  gatewayCurrencyCountryCodeProfileId_ =
-      useSetupResponseExperiment
-          ? String("custom_experimental")
-          : (currentSetupResponseGatewayCompat_
-                 ? String(gatewayCurrencyCountryCodeProfileIdLabel())
-                 : String("standard_iso4217_bcd"));
-
-  currencyCountryCodeEncodingMode_ =
-      useSetupResponseExperiment
-          ? String("custom_experimental")
-          : (currentSetupResponseGatewayCompat_
-                 ? String(gatewayCurrencyCountryCodeEncodingModeLabel())
-                 : String("iso4217_numeric_packed_bcd"));
+  setupResponseProfileId_ = useSetupResponseExperiment
+    ? String("setup_experiment_") + setupResponseExperimentLabel_
+    : (useSetupResponseVariant ? String("setup_variant_") + activeVariant->label : (currentSetupResponseGatewayCompat_ ? String(gatewayCompatResponseProfileIdLabel()) : String("standard_setup_default")));
+setupResponseSuspectField_ = useSetupResponseExperiment
+    ? String("currency_max_response_time_options_sweep")
+    : (useSetupResponseVariant ? String("setup_payload_variant_sweep") : (currentSetupResponseGatewayCompat_ ? String(gatewayCompatSemanticSuspectFieldLabel()) : String("none")));
+gatewayCurrencyCountryCodeProfileId_ = useSetupResponseExperiment
+    ? String("custom_experimental")
+    : (useSetupResponseVariant ? String(activeVariant->currencyProfileLabel) : (currentSetupResponseGatewayCompat_ ? String(gatewayCurrencyCountryCodeProfileIdLabel()) : String("standard_iso4217_bcd")));
+currencyCountryCodeEncodingMode_ = useSetupResponseExperiment
+    ? String("custom_experimental")
+    : (useSetupResponseVariant ? String("setup_variant_payload") : (currentSetupResponseGatewayCompat_ ? String(gatewayCurrencyCountryCodeEncodingModeLabel()) : String("iso4217_numeric_packed_bcd")));
 
   if (activeVariant)
   {
@@ -12485,6 +12501,26 @@ unsigned long MdbService::sendReaderSetupResponse(unsigned long rxEndedUs,
                   "\",\"count\":" + kSetupResponseVariantCount +
                   ",\"tx_ts_us\":" + firstTxUs + "}");
   }
+
+  // Forced sweep advance: move to the next setup response variant after each
+  // SETUP response while cycle mode is enabled. This intentionally does not
+  // depend on setupResponseVariantAccepted_, because this command is used for
+  // manual A/B/C/... probing on a VMC that keeps retrying SETUP.
+  if (setupResponseVariantCycleEnabled_ && activeVariant && kSetupResponseVariantCount > 0) {
+    const uint8_t previousSetupVariantIndex = setupResponseVariantIndex_;
+    setupResponseVariantIndex_ = static_cast<uint8_t>((setupResponseVariantIndex_ + 1U) % kSetupResponseVariantCount);
+    emitEvent(
+        "setup_response_variant_forced_advanced",
+        String("{\"previous_index\":") + previousSetupVariantIndex +
+            ",\"next_index\":" + setupResponseVariantIndex_ +
+            ",\"count\":" + kSetupResponseVariantCount +
+            ",\"next_label\":\"" +
+            (setupResponseVariantIndex_ < kSetupResponseVariantCount
+                 ? kSetupResponseVariants[setupResponseVariantIndex_].label
+                 : "none") +
+            "\"}");
+  }
+
 
   markSetupResponseSent(firstTxUs, !currentSetupResponseGatewayCompat_);
 
@@ -12856,27 +12892,44 @@ unsigned long MdbService::sendCoinChangerPollResponse(
     return firstTxUs;
   }
 
-  uint8_t payload[16] = {};
-  size_t payloadLength = 0;
-  unsigned long remainingScaled = coinChangerPendingScaled_;
-  unsigned long emittedScaled = 0;
-  // Each MDB coin-in event is exactly 1 byte: 01RR CCCC
-  // (01 = coin deposited, RR=00 cashbox routing, CCCC = coin type).
-  // No second byte — the previous 0x00 was a bug that garbled the checksum frame.
-  while (payloadLength < sizeof(payload))
+  // Legacy behavior: if a repeat is in progress, resend the exact same bytes.
+  // The per-type count field is unchanged — VMC deduplicates by (type, count).
+  if (coinChangerCreditRepeatRemaining_ > 0)
   {
-    uint8_t coinType = 0;
-    uint8_t coinValue = 0;
-    if (!selectCoinChangerCoinType(remainingScaled, coinType, coinValue))
+    coinChangerCreditRepeatRemaining_--;
+    uint8_t frame[3] = {};
+    const size_t length = mdb::buildSlaveBlock(
+        coinChangerCreditRepeatPayload_, 2, frame, sizeof(frame));
+    const unsigned long firstTxUs = transmitResponseFrame(
+        responseReason, "coin_poll_credit_repeat", frame, length);
+    if (firstTxUs == 0)
     {
-      break;
+      emitReplySuppressed("credit_repeat_tx_failed", "credit_repeat", 0,
+                          coinChangerPendingScaled_);
+      return 0;
     }
-    payload[payloadLength++] = static_cast<uint8_t>(0x40U | (coinType & 0x0FU));
-    remainingScaled -= coinValue;
-    emittedScaled += coinValue;
+    emitReplySent("credit_repeat", firstTxUs, 0, coinChangerPendingScaled_,
+                  bytesToHex(frame, length));
+    if (coinChangerCreditRepeatRemaining_ == 0 && coinChangerPendingScaled_ == 0)
+    {
+      const String tid = coinChangerPendingTransactionId_;
+      const unsigned long amtMinor = coinChangerPendingAmountMinor_;
+      emitEvent("coin_payment_completed",
+                String("{\"amount_minor\":") + amtMinor +
+                    ",\"transaction_id\":\"" + escapeForJson(tid) +
+                    "\",\"vmc_credit_accepted\":true,"
+                    "\"completion_scope\":\"legacy_5x_repeat_done\"}");
+      clearCoinChangerPendingPayment();
+    }
+    stateDirty_ = true;
+    return firstTxUs;
   }
 
-  if (payloadLength == 0)
+  // Select a single coin denomination — old device emits one coin type per poll,
+  // repeating 5 times total for reliability.
+  uint8_t coinType = 0;
+  uint8_t coinValue = 0;
+  if (!selectCoinChangerCoinType(coinChangerPendingScaled_, coinType, coinValue))
   {
     emitReplySuppressed("no_enabled_coin_type_for_pending_amount", "credit", 0,
                         coinChangerPendingScaled_);
@@ -12892,19 +12945,30 @@ unsigned long MdbService::sendCoinChangerPollResponse(
     return firstTxUs;
   }
 
-  uint8_t frame[sizeof(payload) + 1] = {};
-  const size_t length =
-      mdb::buildSlaveBlock(payload, payloadLength, frame, sizeof(frame));
+  // Byte 0: 0x50|type for types 0-3, 0x40|type for types 4+ (legacy device format).
+  // Byte 1: per-type counter; VMC uses it to ignore the 4 subsequent identical repeats.
+  const uint8_t creditPrefix = (coinType <= 3U) ? 0x50U : 0x40U;
+  coinChangerPerTypeSendCount_[coinType]++;
+  coinChangerCreditRepeatPayload_[0] =
+      static_cast<uint8_t>(creditPrefix | (coinType & 0x0FU));
+  coinChangerCreditRepeatPayload_[1] = coinChangerPerTypeSendCount_[coinType];
+  coinChangerCreditRepeatRemaining_ = 4;  // 4 more repeats after this first send
+
+  uint8_t frame[3] = {};
+  const size_t length = mdb::buildSlaveBlock(
+      coinChangerCreditRepeatPayload_, 2, frame, sizeof(frame));
   const unsigned long firstTxUs =
       transmitResponseFrame(responseReason, "coin_poll_credit", frame, length);
   if (firstTxUs == 0)
   {
-    emitReplySuppressed("credit_tx_failed", "credit", emittedScaled,
-                        remainingScaled);
+    coinChangerCreditRepeatRemaining_ = 0;
+    emitReplySuppressed("credit_tx_failed", "credit", coinValue,
+                        coinChangerPendingScaled_);
     return 0;
   }
 
-  coinChangerPendingScaled_ = remainingScaled;
+  const unsigned long emittedScaled = coinValue;
+  coinChangerPendingScaled_ -= emittedScaled;
   coinChangerAwaitingVmcScaled_ += emittedScaled;
   coinChangerAwaitingVmcAmountMinor_ +=
       emittedScaled * static_cast<unsigned long>(kMdbCoinChangerScalingFactor);
@@ -12921,15 +12985,12 @@ unsigned long MdbService::sendCoinChangerPollResponse(
                 ",\"remaining_scaled\":" + coinChangerPendingScaled_ +
                 ",\"awaiting_vmc_scaled\":" + coinChangerAwaitingVmcScaled_ +
                 ",\"tx_ts_us\":" + firstTxUs +
+                ",\"repeat_remaining\":" + coinChangerCreditRepeatRemaining_ +
+                ",\"coin_type\":" + static_cast<unsigned int>(coinType) +
+                ",\"count_byte\":" +
+                static_cast<unsigned int>(coinChangerCreditRepeatPayload_[1]) +
                 ",\"reply_hex\":\"" + escapeForJson(bytesToHex(frame, length)) +
                 "\",\"transaction_id\":\"" +
-                escapeForJson(coinChangerPendingTransactionId_) + "\"}");
-  emitEvent("coin_credit_assumed_local_only",
-            String("{\"amount_minor\":") + coinChangerPendingAmountMinor_ +
-                ",\"emitted_scaled\":" + emittedScaled +
-                ",\"remaining_scaled\":" + coinChangerPendingScaled_ +
-                ",\"awaiting_vmc_scaled\":" + coinChangerAwaitingVmcScaled_ +
-                ",\"transaction_id\":\"" +
                 escapeForJson(coinChangerPendingTransactionId_) + "\"}");
   emitEvent("coin_payment_progress",
             String("{\"amount_minor\":") + coinChangerPendingAmountMinor_ +
@@ -12939,15 +13000,6 @@ unsigned long MdbService::sendCoinChangerPollResponse(
                 ",\"vmc_credit_accepted\":false,\"local_only\":true"
                 ",\"transaction_id\":\"" +
                 escapeForJson(coinChangerPendingTransactionId_) + "\"}");
-  if (coinChangerPendingScaled_ == 0)
-  {
-    emitEvent("coin_payment_completed",
-              String("{\"amount_minor\":") + coinChangerPendingAmountMinor_ +
-                  ",\"transaction_id\":\"" +
-                  escapeForJson(coinChangerPendingTransactionId_) +
-                  "\",\"vmc_credit_accepted\":false,"
-                  "\"completion_scope\":\"local_reply_only\"}");
-  }
   stateDirty_ = true;
   return firstTxUs;
 }
