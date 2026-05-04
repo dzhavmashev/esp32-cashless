@@ -403,6 +403,34 @@ void CommandService::handleTextMessage(const uint8_t *payload, size_t length)
     return;
   }
 
+  if (command == "mdb_1c_mode")
+  {
+    const String mode = String(payloadNode["payload"]["mode"] | "ignore");
+    if (!mdbService_.setMdb1cMode(mode))
+    {
+      mdbService_.emitControlEvent(
+          "command_rejected",
+          String("{\"command\":\"mdb_1c_mode\","
+                 "\"reason\":\"invalid_mode\",\"mode\":\"") +
+              mode + "\"}");
+    }
+    return;
+  }
+
+  if (command == "mdb_19_missing_zero_mode")
+  {
+    const String mode = String(payloadNode["payload"]["mode"] | "disabled");
+    if (!mdbService_.setMdbGateway19MissingZeroMode(mode))
+    {
+      mdbService_.emitControlEvent(
+          "command_rejected",
+          String("{\"command\":\"mdb_19_missing_zero_mode\","
+                 "\"reason\":\"invalid_mode\",\"mode\":\"") +
+              mode + "\"}");
+    }
+    return;
+  }
+
   if (command == "mdb_setup_response_experiment")
   {
     const bool enabled = payloadNode["payload"]["enabled"].is<bool>()

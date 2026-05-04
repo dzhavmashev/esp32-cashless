@@ -2008,6 +2008,78 @@ const char *MdbService::mdbCoinFamily08CompatModeLabel() const
   }
 }
 
+const char *MdbService::mdb1cModeLabel() const
+{
+  switch (mdb1cMode_)
+  {
+  case Mdb1cMode::Ignore: return "ignore";
+  case Mdb1cMode::AckOnly: return "ack_only";
+  case Mdb1cMode::AckEnable: return "ack_enable";
+  case Mdb1cMode::Ret: return "ret";
+  case Mdb1cMode::Nak: return "nak";
+  default: return "unknown";
+  }
+}
+
+const char *MdbService::mdbGateway19MissingZeroModeLabel() const
+{
+  switch (mdbGateway19MissingZeroMode_)
+  {
+  case MdbGateway19MissingZeroMode::Disabled: return "disabled";
+  case MdbGateway19MissingZeroMode::Enabled: return "enabled";
+  default: return "unknown";
+  }
+}
+
+const char *MdbService::rxFrameTypeLabel(MdbRxFrameType type)
+{
+  switch (type)
+  {
+  case MdbRxFrameType::StandardFrame: return "standard_frame";
+  case MdbRxFrameType::CompactSymbol: return "compact_symbol";
+  case MdbRxFrameType::MalformedOrPartial: return "malformed_or_partial";
+  default: return "unknown";
+  }
+}
+
+const char *MdbService::rxChecksumStatusLabel(MdbRxChecksumStatus status)
+{
+  switch (status)
+  {
+  case MdbRxChecksumStatus::Valid: return "valid";
+  case MdbRxChecksumStatus::Invalid: return "invalid";
+  case MdbRxChecksumStatus::NotApplicable: return "not_applicable";
+  default: return "unknown";
+  }
+}
+
+MdbService::MdbRxFrameType MdbService::classifyRxFrame(
+    const machine::Frame &frame, MdbRxChecksumStatus &status) const
+{
+  if (frame.normalizedLength == 0)
+  {
+    status = MdbRxChecksumStatus::NotApplicable;
+    return MdbRxFrameType::MalformedOrPartial;
+  }
+  if (frame.normalizedLength == 1)
+  {
+    status = MdbRxChecksumStatus::NotApplicable;
+    return MdbRxFrameType::CompactSymbol;
+  }
+  if (!frame.bytes[0].highBit)
+  {
+    status = MdbRxChecksumStatus::NotApplicable;
+    return MdbRxFrameType::MalformedOrPartial;
+  }
+  if (frame.checksumValid)
+  {
+    status = MdbRxChecksumStatus::Valid;
+    return MdbRxFrameType::StandardFrame;
+  }
+  status = MdbRxChecksumStatus::Invalid;
+  return MdbRxFrameType::MalformedOrPartial;
+}
+
 uint8_t MdbService::gatewayCompatResponseTime() const
 {
   return gatewayCompatProfileConfig().responseTime;
@@ -4516,6 +4588,18 @@ void MdbService::handlePhyStatusObserved(const char *eventName, unsigned long ts
         return;
       }
 
+      if (!gatewaySetupCompatSawExplicitZero_ &&
+          mdbGateway19MissingZeroMode_ == MdbGateway19MissingZeroMode::Disabled)
+      {
+        emitEvent("gateway19_short_frame_rejected",
+                  String("{\"reason\":\"missing_zero_mode_disabled\","
+                         "\"observed_hex\":\"19 03 01 1D\","
+                         "\"mdb_19_missing_zero_mode\":\"disabled\"}"));
+        clearObservedRawStatusWindow();
+        resetGatewaySetupCompat();
+        return;
+      }
+
       const uint8_t setupCommand = cashlessCommandByte(kCashlessSetupCommand);
       const uint8_t syntheticValues[5] = {
           setupCommand, kObservedGatewaySetupPayload1, kObservedGatewaySetupPayload2,
@@ -4824,8 +4908,97 @@ void MdbService::handleFastFrameObserved(const machine::Frame &frame,
     return;
   }
 
+  // 0x1C compact reader-control: classify and handle per mdb_1c_mode.
+  // Must come before isNoResponseCompatTailByte which would otherwise silently drop it.
+  if (frame.normalizedLength == 1 && frame.normalized[0] == kCoinCompatTailByteC)
+  {
+    MdbRxChecksumStatus cs1c = MdbRxChecksumStatus::NotApplicable;
+    const MdbRxFrameType ft1c = classifyRxFrame(frame, cs1c);
+    lastRxFrameType_ = ft1c;
+    lastRxChecksumStatus_ = cs1c;
+    const bool ninthBit1c = frame.bytes[0].highBit;
+    const uint8_t tentativeFamily1c = static_cast<uint8_t>(frame.normalized[0] & 0xF8U);
+    const uint8_t tentativeCmd1c = static_cast<uint8_t>(frame.normalized[0] & 0x07U);
+
+    if (mdb1cMode_ == Mdb1cMode::AckEnable && ninthBit1c)
+    {
+      // Fall through to standard reader-control enable dispatch below.
+    }
+    else
+    {
+      const char *action = "ignored";
+      if (!ninthBit1c)
+      {
+        action = "ignored_bad_ninth_bit";
+        emitEvent("mdb_1c_compact_ignored",
+                  String("{\"ninth_bit\":false,\"mdb_1c_mode\":\"") +
+                      mdb1cModeLabel() +
+                      "\",\"rx_frame_type\":\"compact_symbol\""
+                      ",\"checksum_status\":\"not_applicable\"}");
+      }
+      else if (mdb1cMode_ == Mdb1cMode::AckOnly)
+      {
+        deferredFastPathCashlessTxUs_ = sendAckRaw("1c_ack_only");
+        action = "ack";
+        emitEvent("mdb_1c_ack_only",
+                  String("{\"tx_ts_us\":") + deferredFastPathCashlessTxUs_ +
+                      ",\"reader_enabled\":" + boolToJson(isReaderEnabled_) +
+                      ",\"rx_frame_type\":\"compact_symbol\""
+                      ",\"checksum_status\":\"not_applicable\"}");
+      }
+      else if (mdb1cMode_ == Mdb1cMode::Ret)
+      {
+        uint8_t retFrame[2] = {};
+        const size_t retLen =
+            mdb::buildSingleByteResponse(mdb::kRet, retFrame, sizeof(retFrame));
+        deferredFastPathCashlessTxUs_ = transmitResponseFrame(
+            "1c_ret", "ret", retFrame, retLen, frame.endedAtUs);
+        action = "ret";
+        emitEvent("mdb_1c_ret",
+                  String("{\"tx_ts_us\":") + deferredFastPathCashlessTxUs_ +
+                      ",\"rx_frame_type\":\"compact_symbol\""
+                      ",\"checksum_status\":\"not_applicable\"}");
+      }
+      else if (mdb1cMode_ == Mdb1cMode::Nak)
+      {
+        sendNak();
+        action = "nak";
+        emitEvent("mdb_1c_nak",
+                  String("{\"rx_frame_type\":\"compact_symbol\""
+                         ",\"checksum_status\":\"not_applicable\"}"));
+      }
+      else
+      {
+        emitEvent("mdb_1c_compact_ignored",
+                  String("{\"ninth_bit\":") + boolToJson(ninthBit1c) +
+                      ",\"mdb_1c_mode\":\"ignore\""
+                      ",\"rx_frame_type\":\"compact_symbol\""
+                      ",\"checksum_status\":\"not_applicable\"}");
+      }
+
+      emitEvent("mdb_rx_classified",
+                String("{\"raw_hex\":\"") + machine::rawHex(frame) +
+                    "\",\"normalized_hex\":\"" + machine::normalizedHex(frame) +
+                    "\",\"length\":1,\"first_byte\":\"1C\""
+                    ",\"first_ninth_bit\":" + boolToJson(ninthBit1c) +
+                    ",\"rx_frame_type\":\"compact_symbol\""
+                    ",\"checksum_status\":\"not_applicable\""
+                    ",\"tentative_family\":\"" + byteToHex(tentativeFamily1c) +
+                    "\",\"tentative_command\":" +
+                    static_cast<unsigned int>(tentativeCmd1c) +
+                    ",\"handled\":true,\"action\":\"" + action +
+                    "\",\"mdb_1c_mode\":\"" + mdb1cModeLabel() + "\"}");
+      stateDirty_ = true;
+      markFastHandled();
+      return;
+    }
+  }
+
+  // For 0x7C and 0xFC drop silently; skip 0x1C when AckEnable is active.
   if (frame.normalizedLength == 1 &&
-      isNoResponseCompatTailByte(frame.normalized[0]))
+      isNoResponseCompatTailByte(frame.normalized[0]) &&
+      !(frame.normalized[0] == kCoinCompatTailByteC &&
+        mdb1cMode_ == Mdb1cMode::AckEnable))
   {
     return;
   }
@@ -8375,6 +8548,62 @@ bool MdbService::setMdbCoinFamily08CompatMode(const String &mode)
   return true;
 }
 
+bool MdbService::setMdb1cMode(const String &mode)
+{
+  if (mode == "ignore")
+  {
+    mdb1cMode_ = Mdb1cMode::Ignore;
+  }
+  else if (mode == "ack_only")
+  {
+    mdb1cMode_ = Mdb1cMode::AckOnly;
+  }
+  else if (mode == "ack_enable")
+  {
+    mdb1cMode_ = Mdb1cMode::AckEnable;
+  }
+  else if (mode == "ret")
+  {
+    mdb1cMode_ = Mdb1cMode::Ret;
+  }
+  else if (mode == "nak")
+  {
+    mdb1cMode_ = Mdb1cMode::Nak;
+  }
+  else
+  {
+    emitEvent("mdb_1c_mode_rejected",
+              String("{\"requested\":\"") + escapeForJson(mode) +
+                  "\",\"allowed\":\"ignore,ack_only,ack_enable,ret,nak\"}");
+    return false;
+  }
+  emitEvent("mdb_1c_mode_changed",
+            String("{\"mode\":\"") + mdb1cModeLabel() + "\"}");
+  return true;
+}
+
+bool MdbService::setMdbGateway19MissingZeroMode(const String &mode)
+{
+  if (mode == "disabled")
+  {
+    mdbGateway19MissingZeroMode_ = MdbGateway19MissingZeroMode::Disabled;
+  }
+  else if (mode == "enabled")
+  {
+    mdbGateway19MissingZeroMode_ = MdbGateway19MissingZeroMode::Enabled;
+  }
+  else
+  {
+    emitEvent("mdb_19_missing_zero_mode_rejected",
+              String("{\"requested\":\"") + escapeForJson(mode) +
+                  "\",\"allowed\":\"disabled,enabled\"}");
+    return false;
+  }
+  emitEvent("mdb_19_missing_zero_mode_changed",
+            String("{\"mode\":\"") + mdbGateway19MissingZeroModeLabel() + "\"}");
+  return true;
+}
+
 void MdbService::setGatewayCompatResponseProfile(uint8_t profileId)
 {
   activate();
@@ -8810,6 +9039,14 @@ String MdbService::buildDebugStateJson() const
          escapeForJson(String(mdbFeIdleModeLabel())) +
          "\",\"mdb_coin_family08_compat_mode\":\"" +
          escapeForJson(String(mdbCoinFamily08CompatModeLabel())) +
+         "\",\"mdb_1c_mode\":\"" +
+         escapeForJson(String(mdb1cModeLabel())) +
+         "\",\"mdb_19_missing_zero_mode\":\"" +
+         escapeForJson(String(mdbGateway19MissingZeroModeLabel())) +
+         "\",\"last_rx_frame_type\":\"" +
+         escapeForJson(String(rxFrameTypeLabel(lastRxFrameType_))) +
+         "\",\"last_rx_checksum_status\":\"" +
+         escapeForJson(String(rxChecksumStatusLabel(lastRxChecksumStatus_))) +
          "\",\"fe_idle_just_reset_sent\":" + boolToJson(feIdleJustResetSent_) +
          ",\"coin_payment_timeout_effective_ms\":" +
          (coinPaymentTimeoutOverrideMs_ > 0 ? coinPaymentTimeoutOverrideMs_
@@ -10998,6 +11235,24 @@ void MdbService::appendObservedRawStatusByte(uint8_t value, bool ninthBit,
             kObservedGatewaySetupCompatWindowUs)
     {
       return false;
+    }
+
+    if (insertedMissingZero &&
+        mdbGateway19MissingZeroMode_ == MdbGateway19MissingZeroMode::Disabled)
+    {
+      String observedHex2 = byteToHex(observedRawStatusBytes_[start].raw);
+      for (size_t i2 = start + 1; i2 < observedRawStatusLength_; ++i2)
+      {
+        observedHex2 += " ";
+        observedHex2 += byteToHex(observedRawStatusBytes_[i2].raw);
+      }
+      emitEvent("gateway19_short_frame_rejected",
+                String("{\"reason\":\"missing_zero_mode_disabled\","
+                       "\"observed_hex\":\"") +
+                    observedHex2 +
+                    "\",\"mdb_19_missing_zero_mode\":\"disabled\"}");
+      clearObservedRawStatusWindow();
+      return true;
     }
 
     const uint8_t setupCommand = cashlessCommandByte(kCashlessSetupCommand);

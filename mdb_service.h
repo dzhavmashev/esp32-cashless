@@ -247,6 +247,35 @@ public:
     LegacyHandler = 3,
   };
 
+  enum class MdbRxFrameType : uint8_t
+  {
+    StandardFrame = 0,
+    CompactSymbol = 1,
+    MalformedOrPartial = 2,
+  };
+
+  enum class MdbRxChecksumStatus : uint8_t
+  {
+    Valid = 0,
+    Invalid = 1,
+    NotApplicable = 2,
+  };
+
+  enum class Mdb1cMode : uint8_t
+  {
+    Ignore = 0,
+    AckOnly = 1,
+    AckEnable = 2,
+    Ret = 3,
+    Nak = 4,
+  };
+
+  enum class MdbGateway19MissingZeroMode : uint8_t
+  {
+    Disabled = 0,
+    Enabled = 1,
+  };
+
   static constexpr size_t kDialogueHistorySize = 60;
   static constexpr size_t kDialogueReasonSize = 40;
 
@@ -340,6 +369,8 @@ public:
   bool setMdbFeIdleMode(const String &mode);
   bool setMdbCoinPaymentTimeoutMs(unsigned long timeoutMs);
   bool setMdbCoinFamily08CompatMode(const String &mode);
+  bool setMdb1cMode(const String &mode);
+  bool setMdbGateway19MissingZeroMode(const String &mode);
   // Включает или выключает инверсию RX.
   void setRxInvertEnabled(bool enabled);
   // Включает или выключает подробный монитор кадров.
@@ -396,6 +427,12 @@ private:
   const char *mdbFeCounterModeLabel() const;
   const char *mdbFeIdleModeLabel() const;
   const char *mdbCoinFamily08CompatModeLabel() const;
+  const char *mdb1cModeLabel() const;
+  const char *mdbGateway19MissingZeroModeLabel() const;
+  static const char *rxFrameTypeLabel(MdbRxFrameType type);
+  static const char *rxChecksumStatusLabel(MdbRxChecksumStatus status);
+  MdbRxFrameType classifyRxFrame(const machine::Frame &frame,
+                                 MdbRxChecksumStatus &status) const;
   bool handleCoinFamily08CompatFrame(const machine::Frame &frame,
                                      unsigned long now);
   bool handleGateway19FrameResponse(const machine::Frame &frame,
@@ -876,6 +913,11 @@ private:
   MdbFeIdleMode mdbFeIdleMode_ = MdbFeIdleMode::JustReset0BOnce;
   MdbCoinFamily08CompatMode mdbCoinFamily08CompatMode_ =
       MdbCoinFamily08CompatMode::LegacyHandler;
+  Mdb1cMode mdb1cMode_ = Mdb1cMode::Ignore;
+  MdbGateway19MissingZeroMode mdbGateway19MissingZeroMode_ =
+      MdbGateway19MissingZeroMode::Disabled;
+  MdbRxFrameType lastRxFrameType_ = MdbRxFrameType::StandardFrame;
+  MdbRxChecksumStatus lastRxChecksumStatus_ = MdbRxChecksumStatus::NotApplicable;
   unsigned long coinPaymentTimeoutOverrideMs_ = 300000UL;
   bool feIdleJustResetSent_ = false;
   uint8_t feCreditCounter_ = 0;

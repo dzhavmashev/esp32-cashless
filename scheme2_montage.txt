@@ -26,13 +26,14 @@ CRITICAL:
 
 ==================== PARTS ====================
 
-U1 = 6N137 = MDB RX  (Machine TXD → GPIO14)
-U2 = 6N137 = MDB TX  (GPIO19 → Machine RXD)
+U1 = 6N137 = MDB RX  (MDB DATA → GPIO14)
+U2 = 6N137 = MDB TX  (GPIO19 → MDB DATA)
+(U1 и U2 подключены к ОДНОМУ проводу MDB DATA — half-duplex)
 U3 = PC817 = BILL PULSE  (GPIO32 → machine bill input)
 U4 = PC817 = COIN PULSE  (GPIO33 → machine coin input)
 
-R1 = зависит от напряжения MDB TXD (pin2, VMC → периферия):
-     Измерьте напряжение мультиметром до пайки:
+R1 = зависит от напряжения MDB DATA (idle HIGH, VMC → периферия):
+     Измерьте напряжение MDB DATA мультиметром до пайки:
        5V MDB  →  R1 = 470 Ом   (IF ≈ 7 мА)   ← стандартный случай
       12V MDB  →  R1 = 1 кОм    (IF ≈ 11 мА)
       24V MDB  →  R1 = 2.2 кОм  (IF ≈ 10 мА)
@@ -76,8 +77,8 @@ pin7 (ENABLE) должен быть подтянут к VCC — без него 
   Firmware компенсирует инверсию: MDB_RX_INVERT = true.
 
 Input side (Machine domain):
-  MDB pin2 TXD → R1 → U1 pin2 (AN)
-  MDB pin6 GND (MACHINE_GND) → U1 pin3 (CA)
+  MDB DATA → R1 → U1 pin2 (AN)     ← тот же провод, что U2 pin6
+  MDB GND (MACHINE_GND) → U1 pin3 (CA)
 
 Output side (ESP32 domain):
   +5V_ESP   → U1 pin8 (VCC)
@@ -111,12 +112,12 @@ Output side (Machine domain):
   +5V_ISO   → U2 pin8 (VCC)
   +5V_ISO   → U2 pin7 (ENABLE)
   MACHINE_GND → U2 pin5 (GND)
-  U2 pin6 (OUTPUT) → MDB pin1 RXD
+  U2 pin6 (OUTPUT) → MDB DATA  (тот же провод, что R1 → U1 pin2)
   C2 (100 нФ) между U2 pin8 и U2 pin5
 
 Опциональный pull-up на машинной стороне:
-  Если VMC не имеет внутреннего pull-up на RXD:
-    +5V_ISO → 4.7 кОм → MDB pin1 RXD
+  Если VMC не имеет внутреннего pull-up на MDB DATA:
+    +5V_ISO → 4.7 кОм → MDB DATA
   (обычно pull-up уже встроен в VMC)
 
 Пины без подключения:
@@ -183,13 +184,13 @@ GPIO33 dual-role:
 ==================== BEHAVIOR ====================
 
 MDB idle:
-  MDB pin1 RXD = HIGH  (pull-up в VMC; U2 не тянет)
-  MDB pin2 TXD = HIGH  (VMC держит HIGH между фреймами)
+  MDB DATA = HIGH  (pull-up в VMC; шина отпущена)
 
 MDB сигнал:
   VMC опрашивает шину каждые ~10 мс (POLL)
-  При передаче: TXD уходит LOW → GPIO14 = HIGH (U1 инвертирует)
-  При ответе ESP32: GPIO19 → R2 → U2 → MDB RXD = LOW
+  При передаче VMC: MDB DATA уходит LOW → GPIO14 = HIGH (U1 инвертирует)
+  При ответе ESP32: GPIO19 → R2 → U2 → MDB DATA = LOW
+  Loopback: ESP32 увидит свои TX-байты на RX (GPIO14) — это нормально.
 
 Pulse output:
   GPIO32 HIGH на время PULSE_ON_TIME → U3 тянет BILL_IN LOW
@@ -209,7 +210,7 @@ Pulse output:
 [ ] C2 (100 нФ) между U2 pin8 и U2 pin5
 [ ] U1 pin1 и pin4 не подключены
 [ ] U2 pin1 и pin4 не подключены
-[ ] Измерьте напряжение MDB pin2 TXD мультиметром до пайки R1
-[ ] GPIO14 в idle (VMC запущен) ≈ 0V — если HIGH, U1 не получает питание или TXD не подключён
-[ ] MDB RXD и все pulse-входы HIGH в idle
+[ ] Измерьте напряжение MDB DATA мультиметром до пайки R1
+[ ] GPIO14 в idle (VMC запущен) ≈ 0V — если HIGH, U1 не получает питание или MDB DATA не подключён
+[ ] MDB DATA и все pulse-входы HIGH в idle
 [ ] +5V_ISO не соединён с +5V_ESP (разные стороны изоляции)
