@@ -294,6 +294,115 @@ void CommandService::handleTextMessage(const uint8_t *payload, size_t length)
     return;
   }
 
+  if (command == "mdb_19_response_mode")
+  {
+    const String mode = String(payloadNode["payload"]["mode"] | "synthetic_setup");
+    if (!mdbService_.setMdb19ResponseMode(mode))
+    {
+      mdbService_.emitControlEvent(
+          "command_rejected",
+          String("{\"command\":\"mdb_19_response_mode\",\"reason\":\"invalid_mode\","
+                 "\"mode\":\"") +
+              mode + "\"}");
+    }
+    return;
+  }
+
+  if (command == "mdb_fe_credit_mode")
+  {
+    const String mode = String(payloadNode["payload"]["mode"] | "legacy_type0_repeat5");
+    if (!mdbService_.setMdbFeCreditMode(mode))
+    {
+      mdbService_.emitControlEvent(
+          "command_rejected",
+          String("{\"command\":\"mdb_fe_credit_mode\",\"reason\":\"invalid_mode\","
+                 "\"mode\":\"") +
+              mode + "\"}");
+    }
+    return;
+  }
+
+  if (command == "mdb_fc_mode")
+  {
+    const String mode = String(payloadNode["payload"]["mode"] | "ignore");
+    if (!mdbService_.setMdbFcMode(mode))
+    {
+      mdbService_.emitControlEvent(
+          "command_rejected",
+          String("{\"command\":\"mdb_fc_mode\",\"reason\":\"invalid_mode\","
+                 "\"mode\":\"") +
+              mode + "\"}");
+    }
+    return;
+  }
+
+  if (command == "mdb_fe_credit_gate")
+  {
+    const String mode =
+        String(payloadNode["payload"]["mode"] | "after_reader_enabled");
+    if (!mdbService_.setMdbFeCreditGateMode(mode))
+    {
+      mdbService_.emitControlEvent(
+          "command_rejected",
+          String("{\"command\":\"mdb_fe_credit_gate\",\"reason\":\"invalid_mode\","
+                 "\"mode\":\"") +
+              mode + "\"}");
+    }
+    return;
+  }
+
+  if (command == "mdb_fe_counter_mode")
+  {
+    const String mode = String(payloadNode["payload"]["mode"] | "increment");
+    if (!mdbService_.setMdbFeCounterMode(mode))
+    {
+      mdbService_.emitControlEvent(
+          "command_rejected",
+          String("{\"command\":\"mdb_fe_counter_mode\",\"reason\":\"invalid_mode\","
+                 "\"mode\":\"") +
+              mode + "\"}");
+    }
+    return;
+  }
+
+  if (command == "mdb_fe_idle_mode")
+  {
+    const String mode = String(payloadNode["payload"]["mode"] | "just_reset_0b_once");
+    if (!mdbService_.setMdbFeIdleMode(mode))
+    {
+      mdbService_.emitControlEvent(
+          "command_rejected",
+          String("{\"command\":\"mdb_fe_idle_mode\",\"reason\":\"invalid_mode\","
+                 "\"mode\":\"") +
+              mode + "\"}");
+    }
+    return;
+  }
+
+  if (command == "mdb_coin_payment_timeout_ms")
+  {
+    const unsigned long timeoutMs =
+        payloadNode["payload"]["timeout_ms"].is<unsigned long>()
+            ? payloadNode["payload"]["timeout_ms"].as<unsigned long>()
+            : 0UL;
+    mdbService_.setMdbCoinPaymentTimeoutMs(timeoutMs);
+    return;
+  }
+
+  if (command == "mdb_coin_family08_compat")
+  {
+    const String mode = String(payloadNode["payload"]["mode"] | "legacy_handler");
+    if (!mdbService_.setMdbCoinFamily08CompatMode(mode))
+    {
+      mdbService_.emitControlEvent(
+          "command_rejected",
+          String("{\"command\":\"mdb_coin_family08_compat\","
+                 "\"reason\":\"invalid_mode\",\"mode\":\"") +
+              mode + "\"}");
+    }
+    return;
+  }
+
   if (command == "mdb_setup_response_experiment")
   {
     const bool enabled = payloadNode["payload"]["enabled"].is<bool>()

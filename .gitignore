@@ -23,3 +23,7 @@ mdb_force_standard_profile_globals_patch.diff
 apply_force_standard_profile_fix.py
 
 apply_auth_tx_frame_logger_patch.py
+
+test_logs.zip
+
+test_logs/

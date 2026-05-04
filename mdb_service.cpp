@@ -1924,6 +1924,90 @@ const char *MdbService::gatewayCurrencyCountryCodeProfileIdLabel() const
   return gatewayCompatProfileConfig().currencyProfileLabel;
 }
 
+const char *MdbService::mdb19ResponseModeLabel() const
+{
+  switch (mdb19ResponseMode_)
+  {
+  case Mdb19ResponseMode::SyntheticSetup: return "synthetic_setup";
+  case Mdb19ResponseMode::NoResponse: return "no_response";
+  case Mdb19ResponseMode::Ack: return "ack";
+  case Mdb19ResponseMode::Ret: return "ret";
+  case Mdb19ResponseMode::Nak: return "nak";
+  case Mdb19ResponseMode::ExpansionId: return "expansion_id";
+  default: return "unknown";
+  }
+}
+
+const char *MdbService::mdbFeCreditModeLabel() const
+{
+  switch (mdbFeCreditMode_)
+  {
+  case MdbFeCreditMode::Ignore: return "ignore";
+  case MdbFeCreditMode::LegacyAutoRepeat5: return "legacy_auto_repeat5";
+  case MdbFeCreditMode::LegacyType0Repeat5: return "legacy_type0_repeat5";
+  case MdbFeCreditMode::LegacyType1Repeat5: return "legacy_type1_repeat5";
+  case MdbFeCreditMode::LegacyType2Repeat5: return "legacy_type2_repeat5";
+  case MdbFeCreditMode::LegacyType3Repeat5: return "legacy_type3_repeat5";
+  case MdbFeCreditMode::LegacyType4Repeat5: return "legacy_type4_repeat5";
+  case MdbFeCreditMode::AckOnly: return "ack_only";
+  default: return "unknown";
+  }
+}
+
+const char *MdbService::mdbFcModeLabel() const
+{
+  switch (mdbFcMode_)
+  {
+  case MdbFcMode::Ignore: return "ignore";
+  case MdbFcMode::AckEnable: return "ack_enable";
+  default: return "unknown";
+  }
+}
+
+const char *MdbService::mdbFeCreditGateModeLabel() const
+{
+  switch (mdbFeCreditGateMode_)
+  {
+  case MdbFeCreditGateMode::Immediate: return "immediate";
+  case MdbFeCreditGateMode::AfterReaderEnabled: return "after_reader_enabled";
+  default: return "unknown";
+  }
+}
+
+const char *MdbService::mdbFeCounterModeLabel() const
+{
+  switch (mdbFeCounterMode_)
+  {
+  case MdbFeCounterMode::Same: return "same";
+  case MdbFeCounterMode::Increment: return "increment";
+  default: return "unknown";
+  }
+}
+
+const char *MdbService::mdbFeIdleModeLabel() const
+{
+  switch (mdbFeIdleMode_)
+  {
+  case MdbFeIdleMode::NoResponse: return "no_response";
+  case MdbFeIdleMode::Ack: return "ack";
+  case MdbFeIdleMode::JustReset0BOnce: return "just_reset_0b_once";
+  case MdbFeIdleMode::JustReset0BAlways: return "just_reset_0b_always";
+  default: return "unknown";
+  }
+}
+
+const char *MdbService::mdbCoinFamily08CompatModeLabel() const
+{
+  switch (mdbCoinFamily08CompatMode_)
+  {
+  case MdbCoinFamily08CompatMode::Off: return "off";
+  case MdbCoinFamily08CompatMode::ObserveOnly: return "observe_only";
+  case MdbCoinFamily08CompatMode::AckOnly: return "ack_only";
+  case MdbCoinFamily08CompatMode::LegacyHandler: return "legacy_handler";
+  default: return "unknown";
+  }
+}
+
 uint8_t MdbService::gatewayCompatResponseTime() const
 {
   return gatewayCompatProfileConfig().responseTime;
@@ -4406,6 +4490,32 @@ void MdbService::handlePhyStatusObserved(const char *eventName, unsigned long ts
     };
     auto handleGatewaySetupCompat = [&]()
     {
+      const uint8_t realValues[5] = {
+          kObservedGatewaySetupByte, kObservedGatewaySetupPayload1,
+          kObservedGatewaySetupPayload2, kObservedGatewaySetupPayload3,
+          kObservedGatewaySetupChecksum};
+      machine::RawByte realRaw[5] = {};
+      for (size_t i = 0; i < 5; ++i)
+      {
+        realRaw[i].raw = realValues[i];
+        realRaw[i].value7 = realValues[i];
+        realRaw[i].highBit = (i == 0 || i == 4);
+        realRaw[i].tsUs = tsUs;
+        realRaw[i].tsMs = tsUs / 1000UL;
+        realRaw[i].gapBeforeMs = 0;
+      }
+      machine::Frame realFrame;
+      machine::buildFrame(realRaw, 5, realFrame);
+      realFrame.finalizedAtUs = tsUs;
+      realFrame.frameGapAfterMs = 0;
+      if (handleGateway19FrameResponse(realFrame, micros()))
+      {
+        clearPendingCashlessSplitPrefix();
+        clearObservedRawStatusWindow();
+        resetGatewaySetupCompat();
+        return;
+      }
+
       const uint8_t setupCommand = cashlessCommandByte(kCashlessSetupCommand);
       const uint8_t syntheticValues[5] = {
           setupCommand, kObservedGatewaySetupPayload1, kObservedGatewaySetupPayload2,
@@ -4655,6 +4765,23 @@ void MdbService::handleFastFrameObserved(const machine::Frame &frame,
     fastHandledFrameCommand_ = frame.hasCandidateAddress ? frame.candidateCommand : 0;
   };
 
+  // Pre-filter telemetry: log any family-0x08 frame before mode isolation or TX.
+  if (frame.normalizedLength > 0 &&
+      (frame.normalized[0] & 0xF8U) == kCoinLikeFamily08Base)
+  {
+    const uint8_t firstByte = frame.normalized[0];
+    const bool ninthBit = frame.bytes[0].highBit;
+    const uint8_t cmd = static_cast<uint8_t>(firstByte & 0x07U);
+    emitEvent("mdb_family08_prefilter_seen",
+              String("{\"raw_hex\":\"") + machine::rawHex(frame) +
+                  "\",\"normalized_hex\":\"" + machine::normalizedHex(frame) +
+                  "\",\"first_byte\":" + static_cast<unsigned int>(firstByte) +
+                  ",\"ninth_bit\":" + boolToJson(ninthBit) +
+                  ",\"command\":" + static_cast<unsigned int>(cmd) +
+                  ",\"checksum_valid\":" + boolToJson(frame.checksumValid) +
+                  ",\"stage\":\"fast_frame_prefilter\"}");
+  }
+
   // 0xFC = compat reader-control ENABLE (addr=31 cmd=4, proprietary gateway byte).
   // VMC sends it after SETUP CONFIG to enable the reader session. Must be caught
   // before isNoResponseCompatTailByte() which unconditionally drops 0xFC.
@@ -4662,17 +4789,36 @@ void MdbService::handleFastFrameObserved(const machine::Frame &frame,
       frame.normalized[0] == kCoinCompatTailByteA &&
       cashlessSetupSeen_)
   {
-    deferredFastPathCashlessTxUs_ = sendAckRaw("fc_compat_reader_enable");
-    isReaderEnabled_ = true;
-    cashlessJustResetPending_ = false;
-    beginSessionPending_ = false;
-    beginSessionAmountMinor_ = 0;
-    wrapperStandardFlowEntered_ = true;
-    wrapperExpectedNextRxKind_ = "POLL_OR_SETUP_RESTART";
-    wrapperExpectedNextAction_ = "WAIT_FOR_POLL_OR_SETUP_RESTART";
-    wrapperContinuationKind_ = "fc_compat_reader_enable";
-    setWrapperFsmState(WrapperFsmState::ContinuedToStandardFlow,
-                       "fc_compat_reader_enable", frame.endedAtUs);
+    if (mdbFcMode_ == MdbFcMode::AckEnable)
+    {
+      deferredFastPathCashlessTxUs_ = sendAckRaw("fc_compat_reader_enable");
+      isReaderEnabled_ = true;
+      feIdleJustResetSent_ = false;
+      cashlessJustResetPending_ = false;
+      beginSessionPending_ = false;
+      beginSessionAmountMinor_ = 0;
+      wrapperStandardFlowEntered_ = true;
+      wrapperExpectedNextRxKind_ = "POLL_OR_SETUP_RESTART";
+      wrapperExpectedNextAction_ = "WAIT_FOR_POLL_OR_CREDIT_POLL";
+      wrapperContinuationKind_ = "fc_compat_reader_enable";
+      setWrapperFsmState(WrapperFsmState::ContinuedToStandardFlow,
+                         "fc_compat_reader_enable", frame.endedAtUs);
+      emitEvent("mdb_fc_ack_enable",
+                String("{\"raw_hex\":\"FC\",\"tx_ts_us\":") +
+                    deferredFastPathCashlessTxUs_ +
+                    ",\"reader_enabled\":true}");
+      stateDirty_ = true;
+      markFastHandled();
+      return;
+    }
+
+    emitEvent("mdb_compat_tail_ignored",
+              String("{\"raw_hex\":\"FC\",\"normalized_hex\":\"FC\","
+                     "\"previous_tx_kind\":\"") +
+                  escapeForJson(lastTxKind_) +
+                  "\",\"next_expected_rx_kind\":\"" +
+                  escapeForJson(wrapperExpectedNextRxKind_) +
+                  "\",\"no_response\":true,\"reason\":\"fc_mode_ignore\"}");
     stateDirty_ = true;
     markFastHandled();
     return;
@@ -4689,6 +4835,22 @@ void MdbService::handleFastFrameObserved(const machine::Frame &frame,
       !kReplyToObservedFeCompatPoll)
   {
     return;
+  }
+
+  // Early compat intercept for coin family 0x08 in Cashless mode.
+  {
+    uint8_t raw08 = 0, family08 = 0, cmd08 = 0;
+    if (rawAddressFamilyCommand(frame, raw08, family08, cmd08) &&
+        family08 == kCoinLikeFamily08Base &&
+        mdbOperatingMode_ == MdbOperatingMode::Cashless &&
+        mdbCoinFamily08CompatMode_ != MdbCoinFamily08CompatMode::Off)
+    {
+      if (handleCoinFamily08CompatFrame(frame, finalizedAtMs))
+      {
+        markFastHandled();
+        return;
+      }
+    }
   }
 
   if (handleRawMdbAddressFamily(frame, finalizedAtMs, true, false))
@@ -5016,6 +5178,13 @@ void MdbService::handleFastFrameObserved(const machine::Frame &frame,
   if (kMdbCoinChangerEnabled && frame.normalizedLength == 1 &&
       frame.normalized[0] == kObservedCoinChangerPollByte)
   {
+    if (handleFeCompatPollResponse(frame, micros()))
+    {
+      lastCoinCompatPollObservedUs_ = frame.endedAtUs;
+      coinCompatPollFastHandledAtUs_ = frame.endedAtUs;
+      markFastHandled();
+      return;
+    }
     const unsigned long pendingScaledBefore = coinChangerPendingScaled_;
     const bool justResetPendingBefore = coinChangerJustResetPending_;
     if (coinChangerAwaitingVmcScaled_ > 0 &&
@@ -5436,6 +5605,16 @@ void MdbService::handleFastFrameObserved(const machine::Frame &frame,
         transitionReaderState(ReaderState::SessionIdle,
                               "reader_enabled_waiting_poll_fast",
                               deferredFastPathCashlessTxUs_);
+        if (compactSingleByteReaderControl)
+        {
+          emitEvent("mdb_fe_credit_gate_opened",
+                    String("{\"reason\":\"reader_control_1c_ack\","
+                           "\"reader_enabled\":true,"
+                           "\"wrapper_standard_flow_entered\":") +
+                        boolToJson(wrapperStandardFlowEntered_) +
+                        ",\"gate_mode\":\"" +
+                        mdbFeCreditGateModeLabel() + "\"}");
+        }
 
         lastPollAfterResetTsUs_ = 0;
         lastNextRxAfterResetTsUs_ = frame.endedAtUs;
@@ -5648,18 +5827,24 @@ void MdbService::update()
     stateDirty_ = stateDirty_ || snapshotChanged(beforeClear, session_.snapshot());
   }
 
-  if (hasCoinChangerUnresolvedPayment() && coinChangerQueuedAtMs_ > 0 &&
-      now - coinChangerQueuedAtMs_ > kMdbCoinChangerPaymentTimeoutMs)
   {
-    emitEvent("coin_payment_expired",
-              String("{\"amount_minor\":") + coinChangerPendingAmountMinor_ +
-                  ",\"remaining_scaled\":" + coinChangerPendingScaled_ +
-                  ",\"awaiting_vmc_scaled\":" + coinChangerAwaitingVmcScaled_ +
-                  ",\"vmc_credit_accepted\":false" +
-                  ",\"transaction_id\":\"" +
-                  escapeForJson(coinChangerPendingTransactionId_) + "\"}");
-    clearCoinChangerPendingPayment();
-    stateDirty_ = true;
+    const unsigned long effectiveTimeoutMs =
+        coinPaymentTimeoutOverrideMs_ > 0 ? coinPaymentTimeoutOverrideMs_
+                                          : kMdbCoinChangerPaymentTimeoutMs;
+    if (hasCoinChangerUnresolvedPayment() && coinChangerQueuedAtMs_ > 0 &&
+        now - coinChangerQueuedAtMs_ > effectiveTimeoutMs)
+    {
+      emitEvent("coin_payment_expired",
+                String("{\"amount_minor\":") + coinChangerPendingAmountMinor_ +
+                    ",\"remaining_scaled\":" + coinChangerPendingScaled_ +
+                    ",\"awaiting_vmc_scaled\":" + coinChangerAwaitingVmcScaled_ +
+                    ",\"effective_timeout_ms\":" + effectiveTimeoutMs +
+                    ",\"vmc_credit_accepted\":false" +
+                    ",\"transaction_id\":\"" +
+                    escapeForJson(coinChangerPendingTransactionId_) + "\"}");
+      clearCoinChangerPendingPayment();
+      stateDirty_ = true;
+    }
   }
 
   const uint32_t rawGpioInterruptCount = phy_.rawGpioInterruptCount();
@@ -5951,11 +6136,24 @@ void MdbService::requestCoinPayment(unsigned long amountMinor,
   coinChangerPendingScaled_ = scaledAmount;
   coinChangerPendingTransactionId_ = transactionId;
   coinChangerQueuedAtMs_ = millis();
+  feCreditRepeatRemaining_ = 0;
+  feCreditRepeatType_ = 0;
+  feCreditCounter_ = 0;
+  feCreditBaseCounter_ = 0;
+  feCreditLastCounter_ = 0;
+  feIdleJustResetSent_ = false;
   stateDirty_ = true;
+  const unsigned long effectiveTimeoutMs =
+      coinPaymentTimeoutOverrideMs_ > 0 ? coinPaymentTimeoutOverrideMs_
+                                        : kMdbCoinChangerPaymentTimeoutMs;
   emitEvent("coin_payment_queued",
             String("{\"amount_minor\":") + amountMinor +
                 ",\"pending_scaled\":" + scaledAmount +
                 ",\"scaling_factor\":" + kMdbCoinChangerScalingFactor +
+                ",\"fe_gate_mode\":\"" + mdbFeCreditGateModeLabel() +
+                "\",\"fe_counter_mode\":\"" + mdbFeCounterModeLabel() +
+                "\",\"fe_idle_mode\":\"" + mdbFeIdleModeLabel() +
+                "\",\"effective_timeout_ms\":" + effectiveTimeoutMs +
                 ",\"transaction_id\":\"" + escapeForJson(transactionId) + "\"}");
 }
 
@@ -6003,6 +6201,11 @@ void MdbService::resetCoinChangerProtocolState(bool justResetPending)
   coinCompatTailIgnoreUntilUs_ = 0;
   coinChangerLastCreditReplyTxUs_ = 0;
   coinChangerCreditRepeatRemaining_ = 0;
+  feCreditRepeatRemaining_ = 0;
+  feCreditRepeatType_ = 0;
+  feCreditLastTxUs_ = 0;
+  feCreditBaseCounter_ = 0;
+  feCreditLastCounter_ = 0;
   memset(coinChangerPerTypeSendCount_, 0, sizeof(coinChangerPerTypeSendCount_));
   coinCompatPollFastHandledAtUs_ = 0;
 }
@@ -6015,6 +6218,11 @@ void MdbService::clearCoinChangerPendingPayment()
   coinChangerAwaitingVmcScaled_ = 0;
   coinChangerLastCreditReplyTxUs_ = 0;
   coinChangerCreditRepeatRemaining_ = 0;
+  feCreditRepeatRemaining_ = 0;
+  feCreditRepeatType_ = 0;
+  feCreditLastTxUs_ = 0;
+  feCreditBaseCounter_ = 0;
+  feCreditLastCounter_ = 0;
   coinChangerQueuedAtMs_ = 0;
   coinChangerPendingTransactionId_ = "";
   coinChangerAwaitingVmcTransactionId_ = "";
@@ -7980,6 +8188,193 @@ void MdbService::setCashlessAddress(int address)
                 ",\"just_reset_pending\":true}");
 }
 
+bool MdbService::setMdb19ResponseMode(const String &mode)
+{
+  const String m = mode;
+  if (m == "synthetic_setup") mdb19ResponseMode_ = Mdb19ResponseMode::SyntheticSetup;
+  else if (m == "no_response") mdb19ResponseMode_ = Mdb19ResponseMode::NoResponse;
+  else if (m == "ack") mdb19ResponseMode_ = Mdb19ResponseMode::Ack;
+  else if (m == "ret") mdb19ResponseMode_ = Mdb19ResponseMode::Ret;
+  else if (m == "nak") mdb19ResponseMode_ = Mdb19ResponseMode::Nak;
+  else if (m == "expansion_id") mdb19ResponseMode_ = Mdb19ResponseMode::ExpansionId;
+  else
+  {
+    emitEvent("mdb_19_response_mode_rejected",
+              String("{\"requested\":\"") + escapeForJson(mode) +
+                  "\",\"allowed\":\"synthetic_setup,no_response,ack,ret,nak,expansion_id\"}");
+    return false;
+  }
+
+  emitEvent("mdb_19_response_mode_changed",
+            String("{\"mode\":\"") + mdb19ResponseModeLabel() + "\"}");
+  return true;
+}
+
+bool MdbService::setMdbFeCreditMode(const String &mode)
+{
+  const String m = mode;
+  if (m == "ignore") mdbFeCreditMode_ = MdbFeCreditMode::Ignore;
+  else if (m == "legacy_auto_repeat5") mdbFeCreditMode_ = MdbFeCreditMode::LegacyAutoRepeat5;
+  else if (m == "legacy_type0_repeat5") mdbFeCreditMode_ = MdbFeCreditMode::LegacyType0Repeat5;
+  else if (m == "legacy_type1_repeat5") mdbFeCreditMode_ = MdbFeCreditMode::LegacyType1Repeat5;
+  else if (m == "legacy_type2_repeat5") mdbFeCreditMode_ = MdbFeCreditMode::LegacyType2Repeat5;
+  else if (m == "legacy_type3_repeat5") mdbFeCreditMode_ = MdbFeCreditMode::LegacyType3Repeat5;
+  else if (m == "legacy_type4_repeat5") mdbFeCreditMode_ = MdbFeCreditMode::LegacyType4Repeat5;
+  else if (m == "ack_only") mdbFeCreditMode_ = MdbFeCreditMode::AckOnly;
+  else
+  {
+    emitEvent("mdb_fe_credit_mode_rejected",
+              String("{\"requested\":\"") + escapeForJson(mode) +
+                  "\",\"allowed\":\"ignore,legacy_auto_repeat5,legacy_type0_repeat5,legacy_type1_repeat5,legacy_type2_repeat5,legacy_type3_repeat5,legacy_type4_repeat5,ack_only\"}");
+    return false;
+  }
+
+  feCreditRepeatRemaining_ = 0;
+  feCreditRepeatType_ = 0;
+
+  emitEvent("mdb_fe_credit_mode_changed",
+            String("{\"mode\":\"") + mdbFeCreditModeLabel() + "\"}");
+  return true;
+}
+
+bool MdbService::setMdbFcMode(const String &mode)
+{
+  const String m = mode;
+  if (m == "ignore") mdbFcMode_ = MdbFcMode::Ignore;
+  else if (m == "ack_enable") mdbFcMode_ = MdbFcMode::AckEnable;
+  else
+  {
+    emitEvent("mdb_fc_mode_rejected",
+              String("{\"requested\":\"") + escapeForJson(mode) +
+                  "\",\"allowed\":\"ignore,ack_enable\"}");
+    return false;
+  }
+
+  emitEvent("mdb_fc_mode_changed",
+            String("{\"mode\":\"") + mdbFcModeLabel() + "\"}");
+  return true;
+}
+
+bool MdbService::setMdbFeCreditGateMode(const String &mode)
+{
+  if (mode == "immediate")
+  {
+    mdbFeCreditGateMode_ = MdbFeCreditGateMode::Immediate;
+  }
+  else if (mode == "after_reader_enabled")
+  {
+    mdbFeCreditGateMode_ = MdbFeCreditGateMode::AfterReaderEnabled;
+  }
+  else
+  {
+    emitEvent("mdb_fe_credit_gate_mode_rejected",
+              String("{\"requested\":\"") + escapeForJson(mode) +
+                  "\",\"allowed\":\"immediate,after_reader_enabled\"}");
+    return false;
+  }
+
+  emitEvent("mdb_fe_credit_gate_mode_changed",
+            String("{\"mode\":\"") + mdbFeCreditGateModeLabel() + "\"}");
+  return true;
+}
+
+bool MdbService::setMdbFeCounterMode(const String &mode)
+{
+  if (mode == "same")
+  {
+    mdbFeCounterMode_ = MdbFeCounterMode::Same;
+  }
+  else if (mode == "increment")
+  {
+    mdbFeCounterMode_ = MdbFeCounterMode::Increment;
+  }
+  else
+  {
+    emitEvent("mdb_fe_counter_mode_rejected",
+              String("{\"requested\":\"") + escapeForJson(mode) +
+                  "\",\"allowed\":\"same,increment\"}");
+    return false;
+  }
+
+  emitEvent("mdb_fe_counter_mode_changed",
+            String("{\"mode\":\"") + mdbFeCounterModeLabel() + "\"}");
+  return true;
+}
+
+bool MdbService::setMdbFeIdleMode(const String &mode)
+{
+  if (mode == "no_response")
+  {
+    mdbFeIdleMode_ = MdbFeIdleMode::NoResponse;
+  }
+  else if (mode == "ack")
+  {
+    mdbFeIdleMode_ = MdbFeIdleMode::Ack;
+  }
+  else if (mode == "just_reset_0b_once")
+  {
+    mdbFeIdleMode_ = MdbFeIdleMode::JustReset0BOnce;
+  }
+  else if (mode == "just_reset_0b_always")
+  {
+    mdbFeIdleMode_ = MdbFeIdleMode::JustReset0BAlways;
+  }
+  else
+  {
+    emitEvent("mdb_fe_idle_mode_rejected",
+              String("{\"requested\":\"") + escapeForJson(mode) +
+                  "\",\"allowed\":\"no_response,ack,just_reset_0b_once,just_reset_0b_always\"}");
+    return false;
+  }
+
+  emitEvent("mdb_fe_idle_mode_changed",
+            String("{\"mode\":\"") + mdbFeIdleModeLabel() + "\"}");
+  return true;
+}
+
+bool MdbService::setMdbCoinPaymentTimeoutMs(unsigned long timeoutMs)
+{
+  coinPaymentTimeoutOverrideMs_ = timeoutMs;
+  const unsigned long effectiveMs =
+      timeoutMs > 0 ? timeoutMs : kMdbCoinChangerPaymentTimeoutMs;
+  emitEvent("mdb_coin_payment_timeout_changed",
+            String("{\"override_ms\":") + timeoutMs +
+                ",\"effective_ms\":" + effectiveMs +
+                ",\"using_default\":" + boolToJson(timeoutMs == 0) + "}");
+  return true;
+}
+
+bool MdbService::setMdbCoinFamily08CompatMode(const String &mode)
+{
+  if (mode == "off")
+  {
+    mdbCoinFamily08CompatMode_ = MdbCoinFamily08CompatMode::Off;
+  }
+  else if (mode == "observe_only")
+  {
+    mdbCoinFamily08CompatMode_ = MdbCoinFamily08CompatMode::ObserveOnly;
+  }
+  else if (mode == "ack_only")
+  {
+    mdbCoinFamily08CompatMode_ = MdbCoinFamily08CompatMode::AckOnly;
+  }
+  else if (mode == "legacy_handler")
+  {
+    mdbCoinFamily08CompatMode_ = MdbCoinFamily08CompatMode::LegacyHandler;
+  }
+  else
+  {
+    emitEvent("mdb_coin_family08_compat_mode_rejected",
+              String("{\"requested\":\"") + escapeForJson(mode) +
+                  "\",\"allowed\":\"off,observe_only,ack_only,legacy_handler\"}");
+    return false;
+  }
+
+  emitEvent("mdb_coin_family08_compat_mode_changed",
+            String("{\"mode\":\"") + mdbCoinFamily08CompatModeLabel() + "\"}");
+  return true;
+}
+
 void MdbService::setGatewayCompatResponseProfile(uint8_t profileId)
 {
   activate();
@@ -8400,6 +8795,28 @@ String MdbService::buildDebugStateJson() const
          ",\"coin_awaiting_vmc_scaled\":" + coinChangerAwaitingVmcScaled_ +
          ",\"coin_last_credit_reply_tx_us\":" +
          coinChangerLastCreditReplyTxUs_ +
+         ",\"mdb_19_response_mode\":\"" +
+         escapeForJson(String(mdb19ResponseModeLabel())) +
+         "\",\"mdb_fe_credit_mode\":\"" +
+         escapeForJson(String(mdbFeCreditModeLabel())) +
+         "\",\"mdb_fc_mode\":\"" +
+         escapeForJson(String(mdbFcModeLabel())) +
+         "\",\"fe_credit_counter\":" + feCreditCounter_ +
+         ",\"mdb_fe_credit_gate_mode\":\"" +
+         escapeForJson(String(mdbFeCreditGateModeLabel())) +
+         "\",\"mdb_fe_counter_mode\":\"" +
+         escapeForJson(String(mdbFeCounterModeLabel())) +
+         "\",\"mdb_fe_idle_mode\":\"" +
+         escapeForJson(String(mdbFeIdleModeLabel())) +
+         "\",\"mdb_coin_family08_compat_mode\":\"" +
+         escapeForJson(String(mdbCoinFamily08CompatModeLabel())) +
+         "\",\"fe_idle_just_reset_sent\":" + boolToJson(feIdleJustResetSent_) +
+         ",\"coin_payment_timeout_effective_ms\":" +
+         (coinPaymentTimeoutOverrideMs_ > 0 ? coinPaymentTimeoutOverrideMs_
+                                            : kMdbCoinChangerPaymentTimeoutMs) +
+         ",\"fe_credit_repeat_remaining\":" + feCreditRepeatRemaining_ +
+         ",\"fe_credit_base_counter\":" + feCreditBaseCounter_ +
+         ",\"fe_credit_last_counter\":" + feCreditLastCounter_ +
          ",\"coin_transaction_id\":\"" +
          escapeForJson(coinChangerPendingTransactionId_) + "\"" +
          ",\"cashless_base_byte\":" +
@@ -9900,6 +10317,158 @@ bool MdbService::handleBillValidatorFamily30Command(
   return false;
 }
 
+bool MdbService::handleCoinFamily08CompatFrame(const machine::Frame &frame,
+                                               unsigned long now)
+{
+  (void)now;
+  uint8_t raw = 0, family = 0, command = 0;
+  rawAddressFamilyCommand(frame, raw, family, command);
+
+  emitEvent("mdb_coin_family08_compat_seen",
+            String("{\"raw_hex\":\"") + byteToHex(raw) +
+                "\",\"command\":" + static_cast<unsigned int>(command) +
+                ",\"mode\":\"" + mdbCoinFamily08CompatModeLabel() +
+                "\",\"operating_mode\":\"cashless" +
+                "\",\"checksum_valid\":" + boolToJson(frame.checksumValid) +
+                ",\"pending_scaled\":" + coinChangerPendingScaled_ +
+                ",\"reader_enabled\":" + boolToJson(isReaderEnabled_) + "}");
+
+  if (mdbCoinFamily08CompatMode_ == MdbCoinFamily08CompatMode::ObserveOnly)
+  {
+    emitEvent("mdb_coin_family08_compat_observe_only",
+              String("{\"raw_hex\":\"") + byteToHex(raw) + "\"}");
+    return true;
+  }
+
+  if (mdbCoinFamily08CompatMode_ == MdbCoinFamily08CompatMode::AckOnly)
+  {
+    sendAckRaw("legacy08_compat_ack_only");
+    emitEvent("mdb_coin_family08_compat_ack_only",
+              String("{\"raw_hex\":\"") + byteToHex(raw) + "\"}");
+    return true;
+  }
+
+  // LegacyHandler: no TX for invalid checksum
+  if (!frame.checksumValid)
+  {
+    emitEvent("mdb_coin_family08_compat_checksum_invalid",
+              String("{\"raw_hex\":\"") + byteToHex(raw) +
+                  "\",\"command\":" + static_cast<unsigned int>(command) + "}");
+    return true;
+  }
+
+  switch (command)
+  {
+  case kCoinChangerResetCommand:  // cmd0 / 0x08
+  {
+    sendAckRaw("legacy08_reset_ack");
+    coinChangerJustResetPending_ = true;
+    coinChangerCreditRepeatRemaining_ = 0;
+    stateDirty_ = true;
+    emitEvent("mdb_legacy08_reset_ack",
+              String("{\"raw_hex\":\"") + byteToHex(raw) + "\"}");
+    return true;
+  }
+
+  case kCoinChangerSetupCommand:  // cmd1 / 0x09
+  {
+    const unsigned long txUs =
+        sendCoinChangerSetupResponse("legacy08_setup_response");
+    emitEvent("mdb_legacy08_setup_response",
+              String("{\"tx_ts_us\":") + txUs +
+                  ",\"feature_level\":" +
+                  static_cast<unsigned int>(kMdbCoinChangerFeatureLevel) + "}");
+    return true;
+  }
+
+  case kCoinChangerPollCommand:  // cmd3 / 0x0B
+  {
+    // Follow-up poll confirming awaiting credit
+    if (coinChangerCreditRepeatRemaining_ == 0 && coinChangerPendingScaled_ == 0 &&
+        coinChangerAwaitingVmcScaled_ > 0)
+    {
+      sendCoinChangerPollResponse("legacy08_poll_followup", false);
+      return true;
+    }
+
+    if (coinChangerJustResetPending_)
+    {
+      coinChangerJustResetPending_ = false;
+      stateDirty_ = true;
+      const uint8_t payload[1] = {kCoinChangerJustResetStatus};
+      uint8_t frameOut[3] = {};
+      const size_t length =
+          mdb::buildSlaveBlock(payload, 1, frameOut, sizeof(frameOut));
+      transmitResponseFrame("legacy08_poll_just_reset", "legacy08_just_reset",
+                            frameOut, length);
+      emitEvent("mdb_legacy08_poll_just_reset",
+                String("{\"frame_hex\":\"") +
+                    escapeForJson(bytesToHex(frameOut, length)) + "\"}");
+      return true;
+    }
+
+    if (coinChangerPendingScaled_ > 0 || coinChangerCreditRepeatRemaining_ > 0)
+    {
+      sendCoinChangerPollResponse("legacy08_poll_credit", false);
+      emitEvent("mdb_legacy08_poll_credit_sent",
+                String("{\"repeat_remaining\":") + coinChangerCreditRepeatRemaining_ +
+                    ",\"pending_scaled\":" + coinChangerPendingScaled_ +
+                    ",\"awaiting_vmc_scaled\":" + coinChangerAwaitingVmcScaled_ +
+                    "}");
+      return true;
+    }
+
+    // Idle: no TX
+    emitEvent("mdb_legacy08_poll_idle_no_response",
+              String("{\"raw_hex\":\"") + byteToHex(raw) +
+                  "\",\"no_response\":true}");
+    return true;
+  }
+
+  case kCoinChangerCoinTypeCommand:  // cmd4 / 0x0C
+  {
+    sendAckRaw("legacy08_cmd4_ack");
+    emitEvent("mdb_legacy08_cmd4_ack",
+              String("{\"raw_hex\":\"") + byteToHex(raw) + "\"}");
+    return true;
+  }
+
+  case 6:  // cmd6 / 0x0E (no named constant)
+  {
+    sendAckRaw("legacy08_cmd6_ack");
+    emitEvent("mdb_legacy08_cmd6_ack",
+              String("{\"raw_hex\":\"") + byteToHex(raw) + "\"}");
+    return true;
+  }
+
+  case kCoinChangerExpansionCommand:  // cmd7 / 0x0F
+  {
+    const uint8_t subcommand =
+        frame.normalizedLength >= 2 ? frame.normalized[1]
+                                    : kCoinChangerExpansionIdSubcommand;
+    if (subcommand == kCoinChangerExpansionIdSubcommand)
+    {
+      sendCoinChangerExpansionIdResponse("legacy08_expansion_response");
+    }
+    else
+    {
+      sendAckRaw("legacy08_expansion_ack");
+    }
+    emitEvent("mdb_legacy08_expansion_handled",
+              String("{\"raw_hex\":\"") + byteToHex(raw) +
+                  "\",\"subcommand\":" +
+                  static_cast<unsigned int>(subcommand) + "}");
+    return true;
+  }
+
+  default:
+    emitEvent("mdb_legacy08_unknown_no_response",
+              String("{\"raw_hex\":\"") + byteToHex(raw) +
+                  "\",\"command\":" + static_cast<unsigned int>(command) + "}");
+    return true;
+  }
+}
+
 bool MdbService::handleCoinChangerCommand(const machine::Frame &frame,
                                           unsigned long now,
                                           bool fastPath,
@@ -10475,6 +11044,30 @@ void MdbService::appendObservedRawStatusByte(uint8_t value, bool ninthBit,
       observedHex += byteToHex(observedRawStatusBytes_[i].raw);
     }
 
+    uint8_t realValues[5] = {
+        kObservedGatewaySetupByte, kObservedGatewaySetupPayload1,
+        kObservedGatewaySetupPayload2, kObservedGatewaySetupPayload3,
+        kObservedGatewaySetupChecksum};
+    machine::RawByte realRaw[5] = {};
+    for (size_t i = 0; i < 5; ++i)
+    {
+      realRaw[i].raw = realValues[i];
+      realRaw[i].value7 = realValues[i];
+      realRaw[i].highBit = (i == 0 || i == 4);
+      realRaw[i].tsUs = tsUs;
+      realRaw[i].tsMs = tsUs / 1000UL;
+      realRaw[i].gapBeforeMs = 0;
+    }
+    machine::Frame realFrame;
+    machine::buildFrame(realRaw, 5, realFrame);
+    realFrame.finalizedAtUs = tsUs;
+    realFrame.frameGapAfterMs = 0;
+    if (handleGateway19FrameResponse(realFrame, micros()))
+    {
+      clearObservedRawStatusWindow();
+      return true;
+    }
+
     assumedFrame.finalizedAtUs = tsUs;
     assumedFrame.frameGapAfterMs = 0;
     const unsigned long now = millis();
@@ -10977,6 +11570,30 @@ bool MdbService::tryHandleObservedRawStatusWindow(unsigned long tsUs)
         observedHex += byteToHex(observedRawStatusBytes_[i].raw);
       }
 
+      uint8_t realValues[5] = {
+          kObservedGatewaySetupByte, kObservedGatewaySetupPayload1,
+          kObservedGatewaySetupPayload2, kObservedGatewaySetupPayload3,
+          kObservedGatewaySetupChecksum};
+      machine::RawByte realRaw[5] = {};
+      for (size_t i = 0; i < 5; ++i)
+      {
+        realRaw[i].raw = realValues[i];
+        realRaw[i].value7 = realValues[i];
+        realRaw[i].highBit = (i == 0 || i == 4);
+        realRaw[i].tsUs = tsUs;
+        realRaw[i].tsMs = tsUs / 1000UL;
+        realRaw[i].gapBeforeMs = 0;
+      }
+      machine::Frame realFrame;
+      machine::buildFrame(realRaw, 5, realFrame);
+      realFrame.finalizedAtUs = tsUs;
+      realFrame.frameGapAfterMs = 0;
+      if (handleGateway19FrameResponse(realFrame, micros()))
+      {
+        clearObservedRawStatusWindow();
+        return true;
+      }
+
       if (dispatchSyntheticObservedFrame(
               compatSetupValues, 5, "cashless_gateway_setup_compat",
               String("{\"observed_hex\":\"") + observedHex +
@@ -11271,6 +11888,7 @@ bool MdbService::handleLevel1CashlessFrame(const machine::Frame &frame,
         sendAckRaw("reader_control_enable_compact_ack");
 
     isReaderEnabled_ = true;
+    feIdleJustResetSent_ = false;
     cashlessJustResetPending_ = false;
     beginSessionPending_ = false;
     beginSessionAmountMinor_ = 0;
@@ -11358,6 +11976,13 @@ bool MdbService::handleLevel1CashlessFrame(const machine::Frame &frame,
                   "\",\"tx_ts_us\":" + firstTxUs +
                   ",\"reader_enabled\":true"
                   ",\"fast_path\":false}");
+    emitEvent("mdb_fe_credit_gate_opened",
+              String("{\"reason\":\"reader_control_1c_ack\","
+                     "\"reader_enabled\":true,"
+                     "\"wrapper_standard_flow_entered\":") +
+                  boolToJson(wrapperStandardFlowEntered_) +
+                  ",\"gate_mode\":\"" +
+                  mdbFeCreditGateModeLabel() + "\"}");
 
     emitProtocolProgressExpectation("compact_enable_ack_sent", firstTxUs);
 
@@ -12803,6 +13428,321 @@ bool MdbService::selectCoinChangerCoinType(unsigned long remainingScaled,
   return false;
 }
 
+uint8_t MdbService::currentLegacyFeCreditType() const
+{
+  switch (mdbFeCreditMode_)
+  {
+  case MdbFeCreditMode::LegacyType1Repeat5:
+    return 1;
+  case MdbFeCreditMode::LegacyType2Repeat5:
+    return 2;
+  case MdbFeCreditMode::LegacyType3Repeat5:
+    return 3;
+  case MdbFeCreditMode::LegacyType4Repeat5:
+    return 4;
+  case MdbFeCreditMode::LegacyAutoRepeat5:
+  case MdbFeCreditMode::LegacyType0Repeat5:
+  default:
+    return 0;
+  }
+}
+
+bool MdbService::buildLegacyFeCreditPayload(uint8_t coinType, uint8_t counter,
+                                            uint8_t *frame, size_t frameCapacity,
+                                            size_t &frameLength)
+{
+  if (frame == nullptr || frameCapacity < 3)
+  {
+    frameLength = 0;
+    return false;
+  }
+
+  const uint8_t prefix = coinType <= 3 ? 0x50 : 0x40;
+  const uint8_t payload[] = {
+      static_cast<uint8_t>(prefix | (coinType & 0x0F)),
+      counter,
+  };
+
+  frameLength = mdb::buildSlaveBlock(payload, sizeof(payload), frame, frameCapacity);
+  return frameLength == 3;
+}
+
+bool MdbService::handleGateway19FrameResponse(const machine::Frame &frame,
+                                              unsigned long now)
+{
+  if (mdb19ResponseMode_ == Mdb19ResponseMode::SyntheticSetup)
+  {
+    return false;
+  }
+
+  unsigned long txUs = 0;
+  switch (mdb19ResponseMode_)
+  {
+  case Mdb19ResponseMode::NoResponse:
+    noteNoResponse("gateway19_no_response", now, DialogueKind::Setup);
+    break;
+  case Mdb19ResponseMode::Ack:
+    txUs = sendAckRaw("gateway19_ack");
+    break;
+  case Mdb19ResponseMode::Ret:
+  {
+    uint8_t out[2] = {};
+    const size_t len = mdb::buildSingleByteResponse(mdb::kRet, out, sizeof(out));
+    txUs = transmitResponseFrame("gateway19_ret", "ret", out, len, now);
+    break;
+  }
+  case Mdb19ResponseMode::Nak:
+  {
+    uint8_t out[2] = {};
+    const size_t len = mdb::buildSingleByteResponse(mdb::kNak, out, sizeof(out));
+    txUs = transmitResponseFrame("gateway19_nak", "nak", out, len, now);
+    break;
+  }
+  case Mdb19ResponseMode::ExpansionId:
+    txUs = sendReaderExpansionIdResponse("gateway19_expansion_id");
+    break;
+  case Mdb19ResponseMode::SyntheticSetup:
+  default:
+    return false;
+  }
+
+  emitEvent("gateway19_response_mode_used",
+            String("{\"mode\":\"") + mdb19ResponseModeLabel() +
+                "\",\"raw_hex\":\"" +
+                escapeForJson(bytesToHex(frame.normalized, frame.normalizedLength)) +
+                "\",\"timestamp_us\":" + now +
+                ",\"tx_ts_us\":" + txUs + "}");
+  if (mdb19ResponseMode_ == Mdb19ResponseMode::NoResponse)
+  {
+    emitEvent("gateway19_no_response",
+              String("{\"raw_hex\":\"") +
+                  escapeForJson(bytesToHex(frame.normalized, frame.normalizedLength)) +
+                  "\",\"reason\":\"mode_no_response\"}");
+  }
+  return true;
+}
+
+bool MdbService::handleFeCompatPollResponse(const machine::Frame &frame,
+                                            unsigned long now)
+{
+  const auto emitPollSeen = [&]()
+  {
+    emitEvent("mdb_fe_compat_poll_seen",
+              String("{\"mode\":\"") + mdbFeCreditModeLabel() +
+                  "\",\"raw_hex\":\"" +
+                  escapeForJson(bytesToHex(frame.normalized, frame.normalizedLength)) +
+                  "\",\"rx_ts_us\":" + frame.endedAtUs + "}");
+  };
+
+  if (mdbFeCreditMode_ == MdbFeCreditMode::Ignore)
+  {
+    emitPollSeen();
+    emitEvent("mdb_fe_compat_ignored",
+              String("{\"raw_hex\":\"FE\",\"mode\":\"") +
+                  mdbFeCreditModeLabel() +
+                  "\",\"no_response\":true}");
+    return true;
+  }
+
+  if (mdbFeCreditMode_ == MdbFeCreditMode::AckOnly)
+  {
+    const unsigned long txUs = sendAckRaw("mdb_fe_ack_only");
+    emitPollSeen();
+    emitEvent("mdb_fe_ack_only",
+              String("{\"raw_hex\":\"FE\",\"tx_ts_us\":") + txUs + "}");
+    return true;
+  }
+
+  if (feCreditRepeatRemaining_ == 0 && coinChangerPendingScaled_ == 0)
+  {
+    if (coinChangerAwaitingVmcScaled_ > 0)
+    {
+      const unsigned long confirmedScaled = coinChangerAwaitingVmcScaled_;
+      emitEvent("coin_reply_followup_poll_seen",
+                String("{\"compat_mode\":true,\"rx_ts_us\":") +
+                    frame.endedAtUs +
+                    ",\"delta_us_from_last_credit_reply\":" +
+                    (feCreditLastTxUs_ > 0 && frame.endedAtUs >= feCreditLastTxUs_
+                         ? frame.endedAtUs - feCreditLastTxUs_
+                         : 0) +
+                    ",\"awaiting_vmc_scaled\":" + coinChangerAwaitingVmcScaled_ +
+                    ",\"transaction_id\":\"" +
+                    escapeForJson(coinChangerPendingTransactionId_) + "\"}");
+      coinChangerAwaitingVmcAmountMinor_ = 0;
+      coinChangerAwaitingVmcScaled_ = 0;
+      coinChangerLastCreditReplyTxUs_ = 0;
+      emitEvent("coin_credit_confirmed_by_followup_poll",
+                String("{\"confirmed_scaled\":") + confirmedScaled +
+                    ",\"remaining_pending_scaled\":" + coinChangerPendingScaled_ +
+                    ",\"transaction_id\":\"" +
+                    escapeForJson(coinChangerPendingTransactionId_) + "\"}");
+      const String tid = coinChangerPendingTransactionId_;
+      const unsigned long amtMinor = coinChangerPendingAmountMinor_;
+      emitEvent("coin_payment_completed",
+                String("{\"amount_minor\":") + amtMinor +
+                    ",\"transaction_id\":\"" + escapeForJson(tid) +
+                    "\",\"vmc_credit_accepted\":true,"
+                    "\"completion_scope\":\"fe_compat_followup_poll\"}");
+      clearCoinChangerPendingPayment();
+      stateDirty_ = true;
+      emitPollSeen();
+      return true;
+    }
+
+    emitPollSeen();
+
+    // FE idle: no pending credit, choose response based on mdbFeIdleMode_
+    const bool sendJustReset0B =
+        (mdbFeIdleMode_ == MdbFeIdleMode::JustReset0BAlways) ||
+        (mdbFeIdleMode_ == MdbFeIdleMode::JustReset0BOnce && !feIdleJustResetSent_);
+
+    if (mdbFeIdleMode_ == MdbFeIdleMode::Ack)
+    {
+      const unsigned long txUs = sendAckRaw("fe_idle_ack");
+      emitEvent("mdb_fe_idle_response_sent",
+                String("{\"mode\":\"ack\",\"payload_hex\":\"00\","
+                       "\"pending_scaled\":0,\"reader_enabled\":") +
+                    boolToJson(isReaderEnabled_) +
+                    ",\"tx_ts_us\":" + txUs + "}");
+    }
+    else if (sendJustReset0B)
+    {
+      feIdleJustResetSent_ = true;
+      const uint8_t payload[1] = {0x0B};
+      uint8_t frameOut[3] = {};
+      const size_t length =
+          mdb::buildSlaveBlock(payload, 1, frameOut, sizeof(frameOut));
+      const unsigned long txUs =
+          transmitResponseFrame("fe_idle_just_reset_0b", "fe_idle_just_reset_0b",
+                                frameOut, length);
+      emitEvent("mdb_fe_idle_response_sent",
+                String("{\"mode\":\"") + mdbFeIdleModeLabel() +
+                    "\",\"payload_hex\":\"0B\","
+                    "\"frame_hex\":\"" + escapeForJson(bytesToHex(frameOut, length)) +
+                    "\",\"pending_scaled\":0,\"reader_enabled\":" +
+                    boolToJson(isReaderEnabled_) +
+                    ",\"tx_ts_us\":" + txUs + "}");
+    }
+    else
+    {
+      emitEvent("mdb_fe_no_pending_credit",
+                String("{\"mode\":\"") + mdbFeIdleModeLabel() +
+                    "\",\"raw_hex\":\"FE\",\"pending_scaled\":0,"
+                    "\"repeat_remaining\":0,\"no_response\":true}");
+    }
+    return true;
+  }
+
+  const bool readerReadyForFeCredit =
+      isReaderEnabled_ || wrapperStandardFlowEntered_ ||
+      readerState_ == ReaderState::Enabled ||
+      readerState_ == ReaderState::PollActive ||
+      readerState_ == ReaderState::SessionIdle ||
+      readerState_ == ReaderState::SessionActive;
+  if (mdbFeCreditGateMode_ == MdbFeCreditGateMode::AfterReaderEnabled &&
+      !readerReadyForFeCredit)
+  {
+    emitPollSeen();
+    emitEvent("mdb_fe_credit_deferred_until_reader_enabled",
+              String("{\"raw_hex\":\"FE\",\"pending_scaled\":") +
+                  coinChangerPendingScaled_ +
+                  ",\"repeat_remaining\":" + feCreditRepeatRemaining_ +
+                  ",\"reader_enabled\":" + boolToJson(isReaderEnabled_) +
+                  ",\"wrapper_standard_flow_entered\":" +
+                  boolToJson(wrapperStandardFlowEntered_) +
+                  ",\"reader_state\":\"" + readerStateLabel(readerState_) +
+                  "\",\"gate_mode\":\"" + mdbFeCreditGateModeLabel() +
+                  "\",\"no_response\":true}");
+    return true;
+  }
+
+  if (feCreditRepeatRemaining_ == 0)
+  {
+    feCreditRepeatType_ = currentLegacyFeCreditType();
+    feCreditRepeatRemaining_ = 5;
+    feCreditBaseCounter_ = static_cast<uint8_t>(feCreditBaseCounter_ + 1);
+    if (feCreditBaseCounter_ == 0)
+    {
+      feCreditBaseCounter_ = 1;
+    }
+    feCreditLastCounter_ = feCreditBaseCounter_;
+  }
+
+  uint8_t counter = feCreditBaseCounter_;
+  if (mdbFeCounterMode_ == MdbFeCounterMode::Increment)
+  {
+    const uint8_t sentCount =
+        static_cast<uint8_t>(5 - feCreditRepeatRemaining_);
+    counter = static_cast<uint8_t>(feCreditBaseCounter_ + sentCount);
+    if (counter == 0)
+    {
+      counter = 1;
+    }
+  }
+  feCreditCounter_ = counter;
+  feCreditLastCounter_ = counter;
+
+  const unsigned long pendingScaledBefore = coinChangerPendingScaled_;
+  uint8_t frameOut[4] = {};
+  size_t frameLen = 0;
+  if (!buildLegacyFeCreditPayload(feCreditRepeatType_, counter,
+                                  frameOut, sizeof(frameOut), frameLen))
+  {
+    emitEvent("mdb_fe_credit_build_failed",
+              String("{\"mode\":\"") + mdbFeCreditModeLabel() +
+                  "\",\"coin_type\":" +
+                  static_cast<unsigned int>(feCreditRepeatType_) +
+                  ",\"counter\":" + static_cast<unsigned int>(counter) +
+                  "}");
+    feCreditRepeatRemaining_ = 0;
+    return true;
+  }
+
+  const unsigned long txUs = transmitResponseFrame(
+      "fe_legacy_credit", "fe_legacy_credit", frameOut, frameLen, now);
+  if (txUs == 0)
+  {
+    return true;
+  }
+
+  emitPollSeen();
+  feCreditLastTxUs_ = txUs;
+  coinChangerLastCreditReplyTxUs_ = txUs;
+  feCreditRepeatRemaining_--;
+  if (feCreditRepeatRemaining_ == 0 && coinChangerPendingScaled_ > 0)
+  {
+    coinChangerAwaitingVmcScaled_ += coinChangerPendingScaled_;
+    coinChangerAwaitingVmcAmountMinor_ += coinChangerPendingAmountMinor_;
+    coinChangerAwaitingVmcTransactionId_ = coinChangerPendingTransactionId_;
+    coinChangerPendingScaled_ = 0;
+    emitEvent("mdb_fe_credit_repeat_done",
+              String("{\"mode\":\"") + mdbFeCreditModeLabel() +
+                  "\",\"gate_mode\":\"" + mdbFeCreditGateModeLabel() +
+                  "\",\"counter_mode\":\"" + mdbFeCounterModeLabel() +
+                  "\",\"awaiting_vmc_scaled\":" + coinChangerAwaitingVmcScaled_ +
+                  ",\"transaction_id\":\"" +
+                  escapeForJson(coinChangerPendingTransactionId_) + "\"}");
+  }
+
+  emitEvent("mdb_fe_credit_sent",
+            String("{\"mode\":\"") + mdbFeCreditModeLabel() +
+                "\",\"gate_mode\":\"" + mdbFeCreditGateModeLabel() +
+                "\",\"counter_mode\":\"" + mdbFeCounterModeLabel() +
+                "\",\"raw_hex\":\"FE\",\"coin_type\":" +
+                static_cast<unsigned int>(feCreditRepeatType_) +
+                ",\"counter\":" + static_cast<unsigned int>(feCreditCounter_) +
+                ",\"payload_hex\":\"" + escapeForJson(bytesToHex(frameOut, 2)) +
+                "\",\"frame_hex\":\"" + escapeForJson(bytesToHex(frameOut, frameLen)) +
+                "\",\"repeat_remaining\":" + feCreditRepeatRemaining_ +
+                ",\"pending_scaled_before\":" + pendingScaledBefore +
+                ",\"reader_enabled\":" + boolToJson(isReaderEnabled_) +
+                ",\"wrapper_standard_flow_entered\":" +
+                boolToJson(wrapperStandardFlowEntered_) +
+                ",\"tx_ts_us\":" + txUs + "}");
+  stateDirty_ = true;
+  return true;
+}
+
 unsigned long MdbService::sendCoinChangerPollResponse(
     const char *responseReason, bool compatMode)
 {
@@ -12910,16 +13850,13 @@ unsigned long MdbService::sendCoinChangerPollResponse(
     }
     emitReplySent("credit_repeat", firstTxUs, 0, coinChangerPendingScaled_,
                   bytesToHex(frame, length));
-    if (coinChangerCreditRepeatRemaining_ == 0 && coinChangerPendingScaled_ == 0)
+    if (coinChangerCreditRepeatRemaining_ == 0)
     {
-      const String tid = coinChangerPendingTransactionId_;
-      const unsigned long amtMinor = coinChangerPendingAmountMinor_;
-      emitEvent("coin_payment_completed",
-                String("{\"amount_minor\":") + amtMinor +
-                    ",\"transaction_id\":\"" + escapeForJson(tid) +
-                    "\",\"vmc_credit_accepted\":true,"
-                    "\"completion_scope\":\"legacy_5x_repeat_done\"}");
-      clearCoinChangerPendingPayment();
+      emitEvent("mdb_fe_credit_repeat_done",
+                String("{\"transaction_id\":\"") +
+                    escapeForJson(coinChangerPendingTransactionId_) +
+                    "\",\"pending_scaled\":" + coinChangerPendingScaled_ +
+                    ",\"awaiting_vmc_followup\":true}");
     }
     stateDirty_ = true;
     return firstTxUs;

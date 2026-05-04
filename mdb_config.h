@@ -78,32 +78,32 @@ constexpr uint8_t kMdbCoinChangerAddress = 0x01;
 // Таймаут удержания queued-платежа до первого POLL от VMC.
 constexpr unsigned long kMdbCoinChangerPaymentTimeoutMs = 60000UL;
 
-// Профиль coin changer emulator, снятый со старого устройства.
-constexpr uint8_t kMdbCoinChangerFeatureLevel = 0x01;
-constexpr uint8_t kMdbCoinChangerCurrencyCountryCodeHi = 0x14;
-constexpr uint8_t kMdbCoinChangerCurrencyCountryCodeLo = 0x17;
+// Legacy decompiled coin changer profile. The observed VMC does not currently
+// poll the standard addr1 coin changer; this profile is kept for fallback and
+// consistency while the active credit path uses the 0xFE compat poll.
+constexpr uint8_t kMdbCoinChangerFeatureLevel = 0x03;
+constexpr uint8_t kMdbCoinChangerCurrencyCountryCodeHi = 0x16;
+constexpr uint8_t kMdbCoinChangerCurrencyCountryCodeLo = 0x43;
 constexpr uint8_t kMdbCoinChangerScalingFactor = 0x64;
 constexpr uint8_t kMdbCoinChangerDecimalPlaces = 0x02;
-// All 16 coin type bits = 1 → all coins routed to cashbox, none to change
-// tubes. This signals to the VMC that no change can be dispensed.
-constexpr uint16_t kMdbCoinChangerRoutingMask = 0xFFFF;
+constexpr uint16_t kMdbCoinChangerRoutingMask = 0x000F;
 constexpr uint8_t kMdbCoinChangerCoinCredits[16] = {
-    1,
-    5,
-    10,
-    50,
-    100,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
+    0xAC,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
 };
 constexpr char kMdbCoinChangerManufacturer[] = "MEI";
 constexpr char kMdbCoinChangerSerial[] = "3769G600351 ";

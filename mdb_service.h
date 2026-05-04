@@ -191,6 +191,62 @@ public:
     WrapperContinuationOnly = 1,
   };
 
+  enum class Mdb19ResponseMode : uint8_t
+  {
+    SyntheticSetup = 0,
+    NoResponse = 1,
+    Ack = 2,
+    Ret = 3,
+    Nak = 4,
+    ExpansionId = 5,
+  };
+
+  enum class MdbFeCreditMode : uint8_t
+  {
+    Ignore = 0,
+    LegacyAutoRepeat5 = 1,
+    LegacyType0Repeat5 = 2,
+    LegacyType1Repeat5 = 3,
+    LegacyType2Repeat5 = 4,
+    LegacyType3Repeat5 = 5,
+    LegacyType4Repeat5 = 6,
+    AckOnly = 7,
+  };
+
+  enum class MdbFcMode : uint8_t
+  {
+    Ignore = 0,
+    AckEnable = 1,
+  };
+
+  enum class MdbFeCreditGateMode : uint8_t
+  {
+    Immediate = 0,
+    AfterReaderEnabled = 1,
+  };
+
+  enum class MdbFeCounterMode : uint8_t
+  {
+    Same = 0,
+    Increment = 1,
+  };
+
+  enum class MdbFeIdleMode : uint8_t
+  {
+    NoResponse = 0,
+    Ack = 1,
+    JustReset0BOnce = 2,
+    JustReset0BAlways = 3,
+  };
+
+  enum class MdbCoinFamily08CompatMode : uint8_t
+  {
+    Off = 0,
+    ObserveOnly = 1,
+    AckOnly = 2,
+    LegacyHandler = 3,
+  };
+
   static constexpr size_t kDialogueHistorySize = 60;
   static constexpr size_t kDialogueReasonSize = 40;
 
@@ -276,6 +332,14 @@ public:
   // В режиме CoinChanger cashless-команды игнорируются и наоборот.
   void setMdbOperatingMode(MdbOperatingMode mode);
   MdbOperatingMode mdbOperatingMode() const { return mdbOperatingMode_; }
+  bool setMdb19ResponseMode(const String &mode);
+  bool setMdbFeCreditMode(const String &mode);
+  bool setMdbFcMode(const String &mode);
+  bool setMdbFeCreditGateMode(const String &mode);
+  bool setMdbFeCounterMode(const String &mode);
+  bool setMdbFeIdleMode(const String &mode);
+  bool setMdbCoinPaymentTimeoutMs(unsigned long timeoutMs);
+  bool setMdbCoinFamily08CompatMode(const String &mode);
   // Включает или выключает инверсию RX.
   void setRxInvertEnabled(bool enabled);
   // Включает или выключает подробный монитор кадров.
@@ -325,6 +389,23 @@ private:
   static const char *readerStateLabel(ReaderState state);
   // Возвращает текущую фазу диалога для probe/debug.
   const char *currentDialoguePhaseLabel() const;
+  const char *mdb19ResponseModeLabel() const;
+  const char *mdbFeCreditModeLabel() const;
+  const char *mdbFcModeLabel() const;
+  const char *mdbFeCreditGateModeLabel() const;
+  const char *mdbFeCounterModeLabel() const;
+  const char *mdbFeIdleModeLabel() const;
+  const char *mdbCoinFamily08CompatModeLabel() const;
+  bool handleCoinFamily08CompatFrame(const machine::Frame &frame,
+                                     unsigned long now);
+  bool handleGateway19FrameResponse(const machine::Frame &frame,
+                                    unsigned long now);
+  bool handleFeCompatPollResponse(const machine::Frame &frame,
+                                  unsigned long now);
+  uint8_t currentLegacyFeCreditType() const;
+  bool buildLegacyFeCreditPayload(uint8_t coinType, uint8_t counter,
+                                  uint8_t *frame, size_t frameCapacity,
+                                  size_t &frameLength);
   static constexpr size_t kTxAuditKindBucketCount = 10;
   // Возвращает строковую метку audit-bucket для MDB-TX kind.
   static const char *txAuditKindBucketLabel(size_t index);
@@ -786,6 +867,23 @@ private:
   bool experimentSequenceObservedEmitted_ = false;
   bool experimentMachineChangeEmitted_ = false;
   bool experimentObservationClosedEmitted_ = false;
+  Mdb19ResponseMode mdb19ResponseMode_ = Mdb19ResponseMode::SyntheticSetup;
+  MdbFeCreditMode mdbFeCreditMode_ = MdbFeCreditMode::LegacyType0Repeat5;
+  MdbFcMode mdbFcMode_ = MdbFcMode::Ignore;
+  MdbFeCreditGateMode mdbFeCreditGateMode_ =
+      MdbFeCreditGateMode::AfterReaderEnabled;
+  MdbFeCounterMode mdbFeCounterMode_ = MdbFeCounterMode::Same;
+  MdbFeIdleMode mdbFeIdleMode_ = MdbFeIdleMode::JustReset0BOnce;
+  MdbCoinFamily08CompatMode mdbCoinFamily08CompatMode_ =
+      MdbCoinFamily08CompatMode::LegacyHandler;
+  unsigned long coinPaymentTimeoutOverrideMs_ = 300000UL;
+  bool feIdleJustResetSent_ = false;
+  uint8_t feCreditCounter_ = 0;
+  uint8_t feCreditBaseCounter_ = 0;
+  uint8_t feCreditLastCounter_ = 0;
+  uint8_t feCreditRepeatRemaining_ = 0;
+  uint8_t feCreditRepeatType_ = 0;
+  unsigned long feCreditLastTxUs_ = 0;
   uint8_t experimentObservationTriggerAddress_ = 0;
   uint8_t experimentObservationTriggerCommand_ = 0;
   String experimentLastTriggerFamily_;
