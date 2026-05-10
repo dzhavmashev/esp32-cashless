@@ -22,6 +22,8 @@ class ConnectionService {
   bool isWifiConnected() const;
   // Возвращает признак активного WS-подключения.
   bool isWebSocketConnected() const;
+  // Возвращает true если оба уровня соединения активны одновременно.
+  bool isFullyConnected() const;
   // Возвращает локальный IP как строку.
   String localIpString() const;
   // Возвращает MAC-адрес устройства.

@@ -25,7 +25,7 @@ void ConnectionService::begin() {
     outboxMutex_ = xSemaphoreCreateMutex();
   }
   webSocket_.onEvent(handleWebSocketEventStatic);
-  webSocket_.setReconnectInterval(0);
+  webSocket_.setReconnectInterval(WEBSOCKET_RETRY_INTERVAL_MS);
 }
 
 // Поддерживает Wi‑Fi и WebSocket в рабочем состоянии.
@@ -51,6 +51,10 @@ bool ConnectionService::isWifiConnected() const {
 // Возвращает признак активного WebSocket-подключения.
 bool ConnectionService::isWebSocketConnected() const {
   return websocketConnected_;
+}
+
+bool ConnectionService::isFullyConnected() const {
+  return wifiConnected_ && websocketConnected_;
 }
 
 // Возвращает локальный IP устройства.

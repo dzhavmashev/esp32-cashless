@@ -32,23 +32,43 @@ void PulseConfigService::update() {
     return;
   }
 
-  const bool websocketConnected = connectionService_.isWebSocketConnected();
-  const bool wsJustConnected = websocketConnected && !lastWebSocketConnected_;
-  lastWebSocketConnected_ = websocketConnected;
+  const bool wsNow = connectionService_.isWebSocketConnected();
+  const bool wsJustConnected = wsNow && !lastWebSocketConnected_;
+  lastWebSocketConnected_ = wsNow;
 
-  if (!websocketConnected) {
+  if (!wsNow) {
     return;
   }
 
-  if (!configLoaded_ || refreshRequested_ || wsJustConnected) {
-    configLoaded_ = fetchConfig();
-    refreshRequested_ = false;
+  const bool needsFetch = !configLoaded_ || refreshRequested_ || wsJustConnected;
+  if (!needsFetch) {
+    return;
   }
+
+  if (lastFetchFailed_ && (millis() - lastAttemptMs_ < RETRY_INTERVAL_MS)) {
+    return;
+  }
+
+  lastAttemptMs_ = millis();
+  const bool ok = fetchConfig();
+  lastFetchFailed_ = !ok;
+  if (ok) {
+    configLoaded_ = true;
+  }
+  refreshRequested_ = false;
 }
 
 // Помечает конфиг как требующий немедленного обновления.
 void PulseConfigService::requestRefresh() {
   refreshRequested_ = true;
+}
+
+bool PulseConfigService::isLoaded() const { return configLoaded_; }
+
+bool PulseConfigService::isRefreshRequested() const { return refreshRequested_; }
+
+bool PulseConfigService::hasFailedRecently() const {
+  return lastFetchFailed_ && (millis() - lastAttemptMs_ < RETRY_INTERVAL_MS);
 }
 
 // Загружает pulse-конфиг с backend и применяет его локально.
