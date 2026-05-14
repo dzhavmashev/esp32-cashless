@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <freertos/task.h>
 #include <freertos/semphr.h>
+#include "mdb_settings_store.h"
 
 class ConnectionService;
 
@@ -46,7 +47,9 @@ public:
 
   void setPeripheralId(const char *manuf3, const char *serial12,
                        const char *model12, uint8_t verHi, uint8_t verLo);
-  void cycleManufacturerCode();
+  void setSettings(const MdbSettingsStore::Settings &s);
+  void reportSettingsApplied(const MdbSettingsStore::Settings &s,
+                             const char *source);
 
 private:
   static constexpr int MDB_RX_PIN = 14;
@@ -121,9 +124,11 @@ private:
   char modelNumber_[13]  = {'M','D','B','-','C','A','S','H','L','E','S','S','\0'};
   uint8_t swVerHi_ = 0x00;
   uint8_t swVerLo_ = 0x01;
-  uint8_t manufCycleIndex_ = 0;
-
-  static const char * const MANUFACTURER_CYCLE[];
+  uint8_t featureLevel_ = 1;
+  uint16_t countryCode_ = 7;
+  uint8_t scaleFactor_ = 1;
+  uint8_t decimalPlaces_ = 2;
+  uint8_t maxResponseSec_ = 5;
 
   uint8_t rxBuf_[36] = {};
   size_t rxLen_ = 0;
@@ -141,7 +146,7 @@ private:
   uint32_t cntAckSent_ = 0;
 
   static constexpr uint32_t HEARTBEAT_INTERVAL_MS = 5000;
-  static constexpr uint32_t STATUS_REPORT_INTERVAL_MS = 30000;
+  static constexpr uint32_t STATUS_REPORT_INTERVAL_MS = 60000;
 
   CashlessState lastReportedState_ = static_cast<CashlessState>(0xFF);
   uint32_t lastStatusReportMs_ = 0;

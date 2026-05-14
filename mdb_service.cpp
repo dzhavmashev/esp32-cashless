@@ -9,15 +9,22 @@
 #include "connection_service.h"
 #include "logging_utils.h"
 
+// ПРИОРИТЕТ ИСТОЧНИКОВ НАСТРОЕК (от высшего к низшему):
+//   1. WS-команда mdb_set_settings от сервера в runtime
+//   2. mdb_settings_response от сервера при старте (APPLYING_MDB_SETTINGS фаза)
+//   3. NVS (сохранённые от предыдущего успешного старта)
+//   4. Скомпилированные дефолты ("ESP" / 000000000001 / MDB-CASHLESS / 0x00 0x01)
+//
+// ПОВЕДЕНИЕ:
+//   При первом запуске: дефолты применяются, если сервер ничего не прислал и NVS пуст.
+//   При следующих запусках: NVS-настройки, если сервер не прислал свои.
+//   Сервер централизованно управляет настройками через mdb_set_settings WS-команду.
+
 // Per-core critical section — disables interrupts on core 0 only.
 // Core 1 (Arduino loop, WebSocket, Serial) is completely unaffected.
 // Do NOT use vTaskSuspendAll here: it suspends the scheduler on both cores
 // and will freeze core 1 if it calls any blocking FreeRTOS API.
 static portMUX_TYPE s_mdb_mux = portMUX_INITIALIZER_UNLOCKED;
-
-const char * const MdbService::MANUFACTURER_CYCLE[] = {
-  "JOF", "CFM", "MEI", "NRI", "AZK", "TST", "USA", "ESP",
-};
 
 // ISR runs on whatever core gpio_install_isr_service was called from (core 1,
 // during Arduino setup). Core 1 interrupts are NOT disabled by core 0's
@@ -213,21 +220,50 @@ void MdbService::setPeripheralId(const char *manuf3, const char *serial12,
   swVerLo_ = verLo;
 }
 
-void MdbService::cycleManufacturerCode()
+void MdbService::setSettings(const MdbSettingsStore::Settings &s)
 {
-  constexpr size_t kCount = sizeof(MANUFACTURER_CYCLE) / sizeof(MANUFACTURER_CYCLE[0]);
-  manufCycleIndex_ = (manufCycleIndex_ + 1) % kCount;
-  const char *code = MANUFACTURER_CYCLE[manufCycleIndex_];
-  manufCode_[0] = code[0];
-  manufCode_[1] = code[1];
-  manufCode_[2] = code[2];
-  manufCode_[3] = '\0';
-  char buf[80];
-  snprintf(buf, sizeof(buf),
-           "[MDB] manufacturer changed to \"%s\" (%u/%u), restarting handshake",
-           code, (unsigned)(manufCycleIndex_ + 1), (unsigned)kCount);
-  logSerialLine(buf);
-  start();
+  setPeripheralId(s.manufacturer, s.serial, s.model, s.version_hi, s.version_lo);
+  featureLevel_   = s.feature_level;
+  countryCode_    = s.country_code;
+  scaleFactor_    = s.scale_factor;
+  decimalPlaces_  = s.decimal_places;
+  maxResponseSec_ = s.max_response_sec;
+}
+
+void MdbService::reportSettingsApplied(const MdbSettingsStore::Settings &s,
+                                        const char *source)
+{
+  String json = "{\"type\":\"mdb_settings_applied\","
+                "\"device_id\":\"";
+  json += connectionService_.deviceId();
+  json += "\",\"source\":\"";
+  json += source;
+  json += "\",\"settings\":{\"manufacturer\":\"";
+  json += s.manufacturer;
+  json += "\",\"serial\":\"";
+  json += s.serial;
+  json += "\",\"model\":\"";
+  json += s.model;
+  json += "\",\"version_hi\":";
+  json += s.version_hi;
+  json += ",\"version_lo\":";
+  json += s.version_lo;
+  json += ",\"feature_level\":";
+  json += s.feature_level;
+  json += ",\"country_code\":";
+  json += s.country_code;
+  json += ",\"scale_factor\":";
+  json += s.scale_factor;
+  json += ",\"decimal_places\":";
+  json += s.decimal_places;
+  json += ",\"max_response_sec\":";
+  json += s.max_response_sec;
+  json += "}}";
+  Serial.println(json);
+  connectionService_.sendText(json);
+  char logBuf[48];
+  snprintf(logBuf, sizeof(logBuf), "[WS] -> mdb_settings_applied source=%s", source);
+  logSerialLine(logBuf);
 }
 
 void MdbService::taskEntry(void *arg)
@@ -415,7 +451,16 @@ void MdbService::respondJustReset()
 
 void MdbService::respondReaderConfig()
 {
-  const uint8_t payload[] = {0x01, 0x01, 0x00, 0x07, 0x01, 0x02, 0x05, 0x00};
+  const uint8_t payload[] = {
+    0x01,
+    featureLevel_,
+    static_cast<uint8_t>((countryCode_ >> 8) & 0xFF),
+    static_cast<uint8_t>(countryCode_ & 0xFF),
+    scaleFactor_,
+    decimalPlaces_,
+    maxResponseSec_,
+    0x00,  // misc options
+  };
   sendDataWithChecksum(payload, sizeof(payload), "READER_CONFIG");
 }
 

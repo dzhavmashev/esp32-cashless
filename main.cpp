@@ -9,6 +9,7 @@
 #include "firmware_version.h"
 #include "logging_utils.h"
 #include "mdb_service.h"
+#include "mdb_settings_store.h"
 #include "ota_manager.h"
 #include "pulse_config_service.h"
 #include "pulse_service.h"
@@ -21,8 +22,9 @@ namespace
   MdbService mdbService(connectionService);
   OtaManager otaService(connectionService);
   PulseConfigService pulseConfigService(connectionService, pulseService);
+  MdbSettingsStore mdbSettingsStore;
   CommandService commandService(pulseService, mdbService, pulseConfigService,
-                                otaService);
+                                otaService, mdbSettingsStore);
   StatusLeds statusLeds;
   esp_reset_reason_t bootResetReason = ESP_RST_UNKNOWN;
   bool deviceInfoSentForCurrentWsSession = false;
@@ -36,10 +38,13 @@ namespace
     WS_CONNECTING,
     DEVICE_REGISTERING,
     FETCHING_CONFIGS,
+    APPLYING_MDB_SETTINGS,
     READY
   };
   BootPhase bootPhase = BootPhase::WIFI_CONNECTING;
   uint32_t fetchingConfigsEnteredAt = 0;
+  uint32_t applyingMdbSettingsEnteredAt = 0;
+  bool mdbSettingsRequestSent = false;
 
   const char* resetReasonToString(esp_reset_reason_t reason);
   void handleSerialConsole();
@@ -169,13 +174,25 @@ namespace
   {
     switch (phase)
     {
-      case BootPhase::WIFI_CONNECTING:    return "WIFI_CONNECTING";
-      case BootPhase::WS_CONNECTING:      return "WS_CONNECTING";
-      case BootPhase::DEVICE_REGISTERING: return "DEVICE_REGISTERING";
-      case BootPhase::FETCHING_CONFIGS:   return "FETCHING_CONFIGS";
-      case BootPhase::READY:              return "READY";
-      default:                            return "?";
+      case BootPhase::WIFI_CONNECTING:       return "WIFI_CONNECTING";
+      case BootPhase::WS_CONNECTING:         return "WS_CONNECTING";
+      case BootPhase::DEVICE_REGISTERING:    return "DEVICE_REGISTERING";
+      case BootPhase::FETCHING_CONFIGS:      return "FETCHING_CONFIGS";
+      case BootPhase::APPLYING_MDB_SETTINGS: return "APPLYING_MDB_SETTINGS";
+      case BootPhase::READY:                 return "READY";
+      default:                               return "?";
     }
+  }
+
+  static void applyAndReportMdbSettings(const MdbSettingsStore::Settings &s,
+                                         const char *source)
+  {
+    char buf[80];
+    snprintf(buf, sizeof(buf), "[MDB-CFG] using settings from %s: manuf=%s serial=%s",
+             source, s.manufacturer, s.serial);
+    logSerialLine(buf);
+    mdbService.setSettings(s);
+    mdbService.reportSettingsApplied(s, source);
   }
 
   void setBootPhase(BootPhase next, const char* reason = nullptr)
@@ -198,7 +215,14 @@ namespace
     }
 
     if (next == BootPhase::FETCHING_CONFIGS)
+    {
       fetchingConfigsEnteredAt = millis();
+      mdbSettingsRequestSent = false;
+      commandService.clearPendingMdbSettingsResponse();
+    }
+
+    if (next == BootPhase::APPLYING_MDB_SETTINGS)
+      applyingMdbSettingsEnteredAt = millis();
 
     if (next == BootPhase::DEVICE_REGISTERING)
       deviceInfoSentForCurrentWsSession = false;
@@ -257,7 +281,7 @@ namespace
     Serial.println("  card N");
     Serial.println("  remove");
     Serial.println("  setid <manuf3> <serial12> <model12> <verhi> <verlo>");
-    Serial.println("  cycleid");
+    Serial.println("  mdb_reset_nvs");
     Serial.println("  {json command payload}");
   }
 
@@ -334,9 +358,12 @@ namespace
       Serial.println("[CMD] peripheral ID updated, handshake restarting");
       return;
     }
-    if (command == "cycleid")
+    if (command == "mdb_reset_nvs")
     {
-      mdbService.cycleManufacturerCode();
+      mdbSettingsStore.clear();
+      mdbService.setSettings(MdbSettingsStore::defaults());
+      mdbService.start();
+      logSerialLine("[MDB-CFG] NVS cleared, defaults applied");
       return;
     }
     if (command == "cash_ctrl_on")
@@ -431,6 +458,7 @@ void setup()
   bootResetReason = esp_reset_reason();
 
   disableCore0WDT();      // MDB pump task busy-polls core 0; idle task won't run
+  mdbSettingsStore.begin();
   mdbService.begin();
   mdbService.shutdown();  // MDB disabled until READY phase
   statusLeds.begin();
@@ -503,17 +531,58 @@ void loop()
         setBootPhase(BootPhase::WS_CONNECTING, "ws lost");
         break;
       }
+      if (!mdbSettingsRequestSent)
+      {
+        const String req = String("{\"type\":\"mdb_settings_request\",\"device_id\":\"")
+                         + connectionService.deviceId() + "\"}";
+        if (connectionService.sendText(req))
+        {
+          logSerialLine("[WS] -> mdb_settings_request");
+          mdbSettingsRequestSent = true;
+        }
+      }
       pulseConfigService.update();
-      // TODO: mdbConfigService.update() when added
       if (pulseConfigService.isLoaded())
       {
         const String reason = String("configs loaded in ") +
                               (millis() - fetchingConfigsEnteredAt) + " ms";
-        setBootPhase(BootPhase::READY, reason.c_str());
+        setBootPhase(BootPhase::APPLYING_MDB_SETTINGS, reason.c_str());
       }
       else if (millis() - fetchingConfigsEnteredAt > 60000)
       {
-        setBootPhase(BootPhase::READY, "timeout 60s, proceeding without config");
+        setBootPhase(BootPhase::APPLYING_MDB_SETTINGS, "timeout 60s");
+      }
+      break;
+
+    case BootPhase::APPLYING_MDB_SETTINGS:
+      if (commandService.hasPendingMdbSettingsResponse())
+      {
+        const MdbSettingsStore::Settings server = commandService.takePendingMdbSettingsResponse();
+        if (server.isValid)
+        {
+          mdbSettingsStore.save(server);
+          applyAndReportMdbSettings(server, "server");
+        }
+        else
+        {
+          const MdbSettingsStore::Settings nvs = mdbSettingsStore.load();
+          if (nvs.isValid)
+            applyAndReportMdbSettings(nvs, "nvs");
+          else
+            applyAndReportMdbSettings(MdbSettingsStore::defaults(), "default");
+        }
+        setBootPhase(BootPhase::READY);
+        break;
+      }
+      if (millis() - applyingMdbSettingsEnteredAt > 5000)
+      {
+        logSerialLine("[WS] <- no settings response (timeout 5s)");
+        const MdbSettingsStore::Settings nvs = mdbSettingsStore.load();
+        if (nvs.isValid)
+          applyAndReportMdbSettings(nvs, "nvs");
+        else
+          applyAndReportMdbSettings(MdbSettingsStore::defaults(), "default");
+        setBootPhase(BootPhase::READY);
       }
       break;
 

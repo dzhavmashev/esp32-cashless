@@ -5,6 +5,7 @@
 
 #include "logging_utils.h"
 #include "mdb_service.h"
+#include "mdb_settings_store.h"
 #include "ota_manager.h"
 #include "pulse_config_service.h"
 #include "pulse_service.h"
@@ -56,6 +57,26 @@ namespace
            messageType == "status" || messageType == "keepalive";
   }
 
+  MdbSettingsStore::Settings parseSettingsJson(JsonVariantConst sv)
+  {
+    MdbSettingsStore::Settings s = MdbSettingsStore::defaults();
+    const char *manuf  = sv["manufacturer"] | "ESP";
+    const char *serial = sv["serial"]       | "000000000001";
+    const char *model  = sv["model"]        | "MDB-CASHLESS";
+    strncpy(s.manufacturer, manuf,  3); s.manufacturer[3]  = '\0';
+    strncpy(s.serial,       serial, 12); s.serial[12]      = '\0';
+    strncpy(s.model,        model,  12); s.model[12]       = '\0';
+    s.version_hi       = sv["version_hi"]       | 0;
+    s.version_lo       = sv["version_lo"]       | 1;
+    s.feature_level    = sv["feature_level"]    | 1;
+    s.country_code     = sv["country_code"]     | 7;
+    s.scale_factor     = sv["scale_factor"]     | 1;
+    s.decimal_places   = sv["decimal_places"]   | 2;
+    s.max_response_sec = sv["max_response_sec"] | 5;
+    s.isValid = true;
+    return s;
+  }
+
   unsigned long readAmountMinor(JsonVariantConst payload)
   {
     if (payload["amount_minor"].is<unsigned long>())
@@ -72,11 +93,22 @@ namespace
 
 CommandService::CommandService(PulseService &pulseService, MdbService &mdbService,
                                PulseConfigService &pulseConfigService,
-                               OtaManager &otaService)
+                               OtaManager &otaService,
+                               MdbSettingsStore &mdbSettingsStore)
     : pulseService_(pulseService),
       mdbService_(mdbService),
       pulseConfigService_(pulseConfigService),
-      otaService_(otaService) {}
+      otaService_(otaService),
+      mdbSettingsStore_(mdbSettingsStore)
+{
+  pendingResponse_ = MdbSettingsStore::defaults();
+}
+
+MdbSettingsStore::Settings CommandService::takePendingMdbSettingsResponse()
+{
+  hasPendingResponse_ = false;
+  return pendingResponse_;
+}
 
 void CommandService::handleTextMessage(const uint8_t *payload, size_t length)
 {
@@ -128,6 +160,32 @@ void CommandService::handleTextMessage(const uint8_t *payload, size_t length)
       const uint8_t verLo = static_cast<uint8_t>(doc["version_lo"] | 1);
       mdbService_.setPeripheralId(manuf, serial, model, verHi, verLo);
       mdbService_.start();
+      return;
+    }
+
+    if (messageType == "mdb_settings_response")
+    {
+      // Server reply during boot (APPLYING_MDB_SETTINGS phase polls this).
+      // settings=null means "I have nothing for you" (isValid stays false).
+      const JsonVariant sv = doc["settings"];
+      if (!sv.isNull() && sv.is<JsonObject>())
+        pendingResponse_ = parseSettingsJson(sv.as<JsonVariantConst>());
+      else
+        pendingResponse_ = MdbSettingsStore::defaults();  // isValid=false
+      hasPendingResponse_ = true;
+      return;
+    }
+
+    if (messageType == "mdb_set_settings")
+    {
+      const JsonVariant sv = doc["settings"];
+      if (!sv.is<JsonObject>())
+        return;
+      const MdbSettingsStore::Settings s = parseSettingsJson(sv.as<JsonVariantConst>());
+      mdbService_.setSettings(s);
+      mdbSettingsStore_.save(s);
+      mdbService_.start();
+      mdbService_.reportSettingsApplied(s, "server");
       return;
     }
 
